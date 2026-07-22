@@ -19,18 +19,20 @@ async function hashPassword(password) {
 const client = new pg.Client({ connectionString: databaseUrl });
 await client.connect();
 
-const passwordHash = await hashPassword("Password123!");
+const demoPasswordHash = await hashPassword("Password123!");
+const adminPasswordHash = await hashPassword("Wecom123");
 
 await client.query(
   `INSERT INTO users (email, name, password_hash, role)
    VALUES
     ('manager@wecomconnect.local', 'מנהל מערכת', $1, 'MANAGER'),
-    ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE')
+    ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE'),
+    ('admin@wecomconnect.local', 'מנהל ראשי', $2, 'MANAGER')
    ON CONFLICT (email) DO UPDATE SET
     name = EXCLUDED.name,
     password_hash = EXCLUDED.password_hash,
     role = EXCLUDED.role`,
-  [passwordHash]
+  [demoPasswordHash, adminPasswordHash]
 );
 
 await client.query(
