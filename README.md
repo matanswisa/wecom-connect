@@ -26,6 +26,15 @@ npm run db:seed
 npm run dev
 ```
 
+## Docker Setup
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+The `app` service waits for PostgreSQL, runs the schema migration, seeds demo users, and starts Next.js on `http://localhost:3000`.
+
 The seed creates:
 
 - Manager: `manager@wecomconnect.local` / `Password123!`

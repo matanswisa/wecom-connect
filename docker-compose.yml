@@ -1,4 +1,18 @@
 services:
+  app:
+    build:
+      context: .
+    environment:
+      DATABASE_URL: postgres://wecomconnect:wecomconnect@postgres:5432/wecomconnect
+      AUTH_SECRET: ${AUTH_SECRET:-development-docker-secret-change-me}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/seed.mjs && node server.js"]
+
   postgres:
     image: postgres:16-alpine
     environment:
