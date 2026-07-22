@@ -1,0 +1,53 @@
+import { randomBytes, scrypt } from "node:crypto";
+import { promisify } from "node:util";
+import process from "node:process";
+import pg from "pg";
+
+const scryptAsync = promisify(scrypt);
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required");
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const derivedKey = await scryptAsync(password, salt, 64);
+  return `scrypt:${salt}:${derivedKey.toString("hex")}`;
+}
+
+const client = new pg.Client({ connectionString: databaseUrl });
+await client.connect();
+
+const passwordHash = await hashPassword("Password123!");
+
+await client.query(
+  `INSERT INTO users (email, name, password_hash, role)
+   VALUES
+    ('manager@wecomconnect.local', 'מנהל מערכת', $1, 'MANAGER'),
+    ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE')
+   ON CONFLICT (email) DO UPDATE SET
+    name = EXCLUDED.name,
+    password_hash = EXCLUDED.password_hash,
+    role = EXCLUDED.role`,
+  [passwordHash]
+);
+
+await client.query(
+  `INSERT INTO employees (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
+   SELECT id, name, email, 'עובד/ת משמרת', 1, 6 FROM users WHERE email = 'noa@wecomconnect.local'
+   ON CONFLICT (email) DO UPDATE SET user_id = EXCLUDED.user_id`
+);
+
+await client.query(
+  `INSERT INTO employees (name, email, role_title, weekly_min_shifts, weekly_max_shifts)
+   VALUES
+    ('דניאל לוי', 'daniel@wecomconnect.local', 'אחראי משמרת', 2, 6),
+    ('מאיה אברהם', 'maya@wecomconnect.local', 'עובדת משמרת', 1, 5),
+    ('איתי ברק', 'itai@wecomconnect.local', 'עובד משמרת', 1, 6),
+    ('שירה מזרחי', 'shira@wecomconnect.local', 'עובדת משמרת', 1, 4)
+   ON CONFLICT (email) DO NOTHING`
+);
+
+await client.end();
+console.log("Seed data is ready.");
