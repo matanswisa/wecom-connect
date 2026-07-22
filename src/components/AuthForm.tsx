@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 type Mode = "login" | "register";
 
@@ -38,6 +39,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   return (
     <main className="auth-page">
+      <div className="auth-theme-toggle"><ThemeToggle /></div>
       <section className="auth-panel">
         <div className="brand-lockup">
           <Image src="/wecom-logo.svg" alt="wecom" width={132} height={60} priority />

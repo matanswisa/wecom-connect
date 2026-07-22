@@ -1,5 +1,11 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export interface ScheduleDay {
+  index: number;
+  label: string;
+  date: string;
+}
+
 export function toDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -22,7 +28,7 @@ export function formatHebrewDate(dateOnly: string): string {
   }).format(new Date(`${dateOnly}T00:00:00.000Z`));
 }
 
-export function getScheduleDays(weekStart: string) {
+export function getScheduleDays(weekStart: string): ScheduleDay[] {
   return ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"].map((label, index) => ({
     index,
     label,

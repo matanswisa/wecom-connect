@@ -15,7 +15,6 @@ import {
   Pencil,
   Plus,
   Repeat2,
-  Save,
   Search,
   Share2,
   ShieldAlert,
@@ -26,12 +25,25 @@ import {
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { AvailabilityPanel } from "./AvailabilityPanel";
+import { AssignmentUndoToast } from "./AssignmentUndoToast";
 import { EmployeeEditorDialog, type EmployeeEditor } from "./EmployeeEditorDialog";
+import { ShiftWorkerPicker } from "./ShiftWorkerPicker";
+import { ThemeToggle } from "./ThemeToggle";
+import {
+  availabilityStatusLabel,
+  findShiftAvailability,
+  findTimeOff,
+  getAssignmentAvailabilityHint,
+  isUnavailableForShift
+} from "@/lib/availability";
 import { addDays, formatHebrewDate, getScheduleDays } from "@/lib/dates";
 import { getEmployeeColor } from "@/lib/employeeColors";
 import { createSchedulePdf, schedulePdfFilename, shareOrDownloadPdf } from "@/lib/schedulePdf";
 import { buildScheduleCsv, scheduleExportFilename } from "@/lib/scheduleExport";
 import { SHIFT_DEFINITIONS, getShiftTypes } from "@/lib/shifts";
+import { useAvailabilityView } from "@/hooks/useAvailabilityView";
+import { useUndoableAction } from "@/hooks/useUndoableAction";
 import type {
   AvailabilityBlock,
   AvailabilityStatus,
@@ -75,6 +87,9 @@ const EMPTY_SCHEDULE: SchedulePayload = {
   summaries: []
 };
 
+const AVAILABILITY_PAGE_SIZE = 5;
+const ASSIGNMENT_UNDO_DURATION_MS = 6000;
+
 export function ScheduleDashboard({
   currentUser,
   initialWeekStart
@@ -88,6 +103,7 @@ export function ScheduleDashboard({
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<NavigationSection>("schedule");
+  const [isAvailabilityFilterOpen, setIsAvailabilityFilterOpen] = useState(false);
   const [employeeEditor, setEmployeeEditor] = useState<EmployeeEditor | null>(null);
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
   const [toast, setToast] = useState("");
@@ -95,6 +111,7 @@ export function ScheduleDashboard({
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const scheduleTableRef = useRef<HTMLDivElement>(null);
+  const pendingAssignmentRemovalsRef = useRef(new Map<string, ShiftAssignment>());
 
   const days = useMemo(() => getScheduleDays(weekStart), [weekStart]);
   const assignmentsByCell = useMemo(() => groupAssignments(schedule.assignments), [schedule.assignments]);
@@ -124,13 +141,25 @@ export function ScheduleDashboard({
         .map((employee) => employee.id)
     );
   }, [schedule.employees, searchQuery]);
-  const availabilityEmployees = useMemo(
+  const availabilityCandidates = useMemo(
+    () => currentUser.role === "MANAGER" ? schedule.employees : selectableEmployees,
+    [currentUser.role, schedule.employees, selectableEmployees]
+  );
+  const availabilityVisibleIds = useMemo(
     () =>
       currentUser.role === "MANAGER"
-        ? schedule.employees.filter((employee) => matchingEmployeeIds.has(employee.id))
-        : selectableEmployees,
-    [currentUser.role, matchingEmployeeIds, schedule.employees, selectableEmployees]
+        ? matchingEmployeeIds
+        : new Set(selectableEmployees.map((employee) => employee.id)),
+    [currentUser.role, matchingEmployeeIds, selectableEmployees]
   );
+  const availabilityView = useAvailabilityView({
+    employees: availabilityCandidates,
+    visibleEmployeeIds: availabilityVisibleIds,
+    pageSize: AVAILABILITY_PAGE_SIZE,
+    resetKey: `${weekStart}:${searchQuery}`
+  });
+  const openAvailabilityFilter = useCallback(() => setIsAvailabilityFilterOpen(true), []);
+  const closeAvailabilityFilter = useCallback(() => setIsAvailabilityFilterOpen(false), []);
   const swapSourceAssignments = useMemo(
     () =>
       currentUser.role === "MANAGER"
@@ -144,10 +173,32 @@ export function ScheduleDashboard({
     const response = await fetch(`/api/schedule?weekStart=${nextWeekStart}`);
     if (response.ok) {
       const payload = (await response.json()) as SchedulePayload;
-      setSchedule(payload);
+      setSchedule(hidePendingAssignmentRemovals(payload, pendingAssignmentRemovalsRef.current));
     }
     setIsLoading(false);
   }, [weekStart]);
+
+  const restoreAssignment = useCallback((assignment: ShiftAssignment) => {
+    pendingAssignmentRemovalsRef.current.delete(assignment.id);
+    setSchedule((current) => restoreAssignmentInSchedule(current, assignment));
+  }, []);
+
+  const commitAssignmentRemoval = useCallback(async (assignment: ShiftAssignment) => {
+    const response = await fetch(`/api/assignments/${assignment.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      restoreAssignment(assignment);
+      setToast("מחיקת השיבוץ נכשלה והשיבוץ הוחזר.");
+      return;
+    }
+    pendingAssignmentRemovalsRef.current.delete(assignment.id);
+    setToast("השיבוץ נמחק.");
+  }, [restoreAssignment]);
+
+  const assignmentRemoval = useUndoableAction({
+    durationMs: ASSIGNMENT_UNDO_DURATION_MS,
+    onExpire: commitAssignmentRemoval,
+    onUndo: restoreAssignment
+  });
 
   useEffect(() => {
     void loadSchedule(weekStart);
@@ -189,12 +240,16 @@ export function ScheduleDashboard({
     await loadSchedule();
   }
 
-  async function removeAssignment(id: string) {
-    await fetch(`/api/assignments/${id}`, { method: "DELETE" });
-    await loadSchedule();
+  function stageAssignmentRemoval(assignment: ShiftAssignment) {
+    if (assignmentRemoval.pending) {
+      return;
+    }
+    pendingAssignmentRemovalsRef.current.set(assignment.id, assignment);
+    setSchedule((current) => removeAssignmentFromSchedule(current, assignment));
+    assignmentRemoval.stage(assignment);
   }
 
-  async function setShiftAvailability(
+  const setShiftAvailability = useCallback(async function setShiftAvailability(
     employeeId: string,
     dayIndex: number,
     shiftType: ShiftType,
@@ -228,9 +283,12 @@ export function ScheduleDashboard({
     if (response.ok) {
       await loadSchedule();
     }
-  }
+  }, [loadSchedule, schedule.availabilityBlocks, weekStart]);
 
-  async function toggleTimeOff(employeeId: string, dayIndex: number) {
+  const toggleTimeOff = useCallback(async function toggleTimeOff(
+    employeeId: string,
+    dayIndex: number
+  ) {
     const existing = findTimeOff(schedule.availabilityBlocks, employeeId, dayIndex);
     const response = existing
       ? await fetch(`/api/availability/${existing.id}`, { method: "DELETE" })
@@ -250,7 +308,7 @@ export function ScheduleDashboard({
     if (response.ok) {
       await loadSchedule();
     }
-  }
+  }, [loadSchedule, schedule.availabilityBlocks, weekStart]);
 
   async function createSwap(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -444,6 +502,7 @@ export function ScheduleDashboard({
               <UserRound size={18} />
               {currentUser.name}
             </span>
+            <ThemeToggle />
             <button className="icon-button" onClick={logout} title="יציאה">
               <LogOut size={18} />
             </button>
@@ -520,59 +579,31 @@ export function ScheduleDashboard({
                       <div className="shift-cell" key={key}>
                         {currentUser.role === "MANAGER" ? (
                           assignmentPicker?.cellKey === key ? (
-                            <div className="shift-worker-picker" data-pdf-hide="true">
-                              <select
-                                autoFocus
-                                value={assignmentPicker.employeeId}
-                                aria-label={`בחירת עובד, ${day.label}, ${SHIFT_DEFINITIONS[shiftType].label}`}
-                                onChange={(event) =>
-                                  setAssignmentPicker({ cellKey: key, employeeId: event.target.value })
-                                }
-                              >
-                                <option value="" disabled>בחר עובד</option>
-                                {schedule.employees.map((employee) => {
-                                  const isAssigned = assignments.some(
-                                    (assignment) => assignment.employeeId === employee.id
-                                  );
-                                  const hint = assignmentAvailabilityHint(
-                                    schedule.availabilityBlocks,
-                                    employee.id,
-                                    day.index,
-                                    shiftType
-                                  );
-                                  return (
-                                    <option
-                                      value={employee.id}
-                                      disabled={isAssigned}
-                                      key={employee.id}
-                                    >
-                                      {employee.name}
-                                      {isAssigned ? " · כבר משובץ" : hint ? ` · ${hint}` : ""}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                              <button
-                                type="button"
-                                className="picker-save"
-                                disabled={!assignmentPicker.employeeId}
-                                onClick={() => {
-                                  const employeeId = assignmentPicker.employeeId;
-                                  setAssignmentPicker(null);
-                                  void assignShift(employeeId, day.index, shiftType);
-                                }}
-                              >
-                                <Save size={14} />
-                                שמור
-                              </button>
-                              <button
-                                type="button"
-                                title="סגירת בחירת עובד"
-                                onClick={() => setAssignmentPicker(null)}
-                              >
-                                <X size={15} />
-                              </button>
-                            </div>
+                            <ShiftWorkerPicker
+                              employees={schedule.employees}
+                              selectedEmployeeId={assignmentPicker.employeeId}
+                              shiftLabel={`${day.label}, ${SHIFT_DEFINITIONS[shiftType].label}`}
+                              assignedEmployeeIds={new Set(
+                                assignments.map((assignment) => assignment.employeeId)
+                              )}
+                              getAvailabilityHint={(employeeId) =>
+                                getAssignmentAvailabilityHint(
+                                  schedule.availabilityBlocks,
+                                  employeeId,
+                                  day.index,
+                                  shiftType
+                                )
+                              }
+                              onSelect={(employeeId) =>
+                                setAssignmentPicker({ cellKey: key, employeeId })
+                              }
+                              onSave={() => {
+                                const employeeId = assignmentPicker.employeeId;
+                                setAssignmentPicker(null);
+                                void assignShift(employeeId, day.index, shiftType);
+                              }}
+                              onClose={() => setAssignmentPicker(null)}
+                            />
                           ) : (
                             <button
                               className="add-shift"
@@ -616,7 +647,8 @@ export function ScheduleDashboard({
                               {currentUser.role === "MANAGER" ? (
                                 <button
                                   data-pdf-hide="true"
-                                  onClick={() => removeAssignment(assignment.id)}
+                                  disabled={Boolean(assignmentRemoval.pending)}
+                                  onClick={() => stageAssignmentRemoval(assignment)}
                                   title="הסר שיבוץ"
                                 >
                                   <X size={14} />
@@ -765,109 +797,27 @@ export function ScheduleDashboard({
             </aside>
           </section>
 
-          <section className="availability-panel" id="availability-section">
-            <div className="availability-heading">
-              <div className="panel-title">
-                <ShieldAlert size={18} />
-                <h2>אילוצים שבועיים</h2>
-              </div>
-              <div className="availability-legend">
-                <span className="legend-morning">בוקר</span>
-                <span className="legend-evening">ערב</span>
-                <span className="legend-night">לילה</span>
-                <span className="legend-time-off">Time Off</span>
-                <span className="legend-unavailable">לא זמין</span>
-                <span className="legend-preferred">מעוניין לעבוד</span>
-                <span className="legend-open">משמרת פתוחה</span>
-              </div>
-            </div>
-            <div className="availability-scroll">
-              <div className="availability-grid availability-header">
-                <div>עובד</div>
-                {days.map((day) => (
-                  <div key={day.index}>
-                    <strong>{day.label}</strong>
-                    <span>{formatHebrewDate(day.date)}</span>
-                  </div>
-                ))}
-              </div>
-              {availabilityEmployees.map((employee) => {
-                const canEdit =
-                  currentUser.role === "MANAGER" ||
-                  (currentUser.role === "EMPLOYEE" && employee.userId === currentUser.id);
-                return (
-                  <div
-                    className="availability-grid availability-row"
-                    key={employee.id}
-                    style={employeeColorStyle(employee)}
-                  >
-                    <div className="availability-employee">
-                      <strong className="employee-name-with-color">
-                        <i className="employee-color-dot" aria-hidden="true" />
-                        {employee.name}
-                      </strong>
-                      <span>
-                        {currentUser.role === "EMPLOYEE" && canEdit
-                          ? "האילוצים שלי"
-                          : employee.roleTitle}
-                      </span>
-                    </div>
-                    {days.map((day) => {
-                      const timeOff = findTimeOff(
-                        schedule.availabilityBlocks,
-                        employee.id,
-                        day.index
-                      );
-                      return (
-                        <div className={`availability-day ${timeOff ? "is-time-off" : ""}`} key={day.index}>
-                          <button
-                            type="button"
-                            className={`time-off-toggle ${timeOff ? "active" : ""}`}
-                            aria-pressed={Boolean(timeOff)}
-                            disabled={!canEdit}
-                            onClick={() => toggleTimeOff(employee.id, day.index)}
-                          >
-                            Time Off
-                          </button>
-                          {getShiftTypes().map((shiftType) => {
-                            const availability = findShiftAvailability(
-                              schedule.availabilityBlocks,
-                              employee.id,
-                              day.index,
-                              shiftType
-                            );
-                            const value = availability?.status ?? "AVAILABLE";
-                            return (
-                              <label className={`availability-choice ${value.toLowerCase()}`} key={shiftType}>
-                                <span>{SHIFT_DEFINITIONS[shiftType].label}</span>
-                                <select
-                                  aria-label={`${employee.name}, ${day.label}, ${SHIFT_DEFINITIONS[shiftType].label}`}
-                                  value={value}
-                                  disabled={!canEdit || Boolean(timeOff)}
-                                  onChange={(event) =>
-                                    setShiftAvailability(
-                                      employee.id,
-                                      day.index,
-                                      shiftType,
-                                      event.target.value as AvailabilityStatus | "AVAILABLE"
-                                    )
-                                  }
-                                >
-                                  <option value="AVAILABLE">פנוי</option>
-                                  <option value="PREFERRED">מעוניין</option>
-                                  <option value="UNAVAILABLE">לא זמין</option>
-                                </select>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <AvailabilityPanel
+            currentUser={currentUser}
+            days={days}
+            employees={availabilityCandidates}
+            visibleEmployees={availabilityView.visibleEmployees}
+            selectedEmployeeIds={availabilityView.selection}
+            selectedEmployeeCount={availabilityView.selectedEmployees.length}
+            page={availabilityView.page}
+            pageCount={availabilityView.pageCount}
+            pageSize={AVAILABILITY_PAGE_SIZE}
+            availabilityBlocks={schedule.availabilityBlocks}
+            isFilterOpen={isAvailabilityFilterOpen}
+            onOpenFilter={openAvailabilityFilter}
+            onCloseFilter={closeAvailabilityFilter}
+            onToggleEmployee={availabilityView.toggleEmployee}
+            onToggleAll={availabilityView.toggleAll}
+            onPreviousPage={availabilityView.previousPage}
+            onNextPage={availabilityView.nextPage}
+            onSetShiftAvailability={setShiftAvailability}
+            onToggleTimeOff={toggleTimeOff}
+          />
 
           <footer className="bottom-summary">
             <div>
@@ -894,6 +844,14 @@ export function ScheduleDashboard({
         <button className="toast" onClick={() => setToast("")}>
           {toast}
         </button>
+      ) : null}
+      {assignmentRemoval.pending ? (
+        <AssignmentUndoToast
+          employeeName={employeesById.get(assignmentRemoval.pending.employeeId)?.name ?? "העובד"}
+          secondsLeft={assignmentRemoval.secondsLeft}
+          durationMs={ASSIGNMENT_UNDO_DURATION_MS}
+          onUndo={assignmentRemoval.undo}
+        />
       ) : null}
       {pendingAssignment ? (
         <div className="modal-backdrop" role="presentation">
@@ -964,67 +922,62 @@ function groupAssignments(assignments: ShiftAssignment[]) {
   return groups;
 }
 
+function removeAssignmentFromSchedule(
+  schedule: SchedulePayload,
+  assignment: ShiftAssignment
+): SchedulePayload {
+  if (!schedule.assignments.some((item) => item.id === assignment.id)) {
+    return schedule;
+  }
+  return {
+    ...schedule,
+    assignments: schedule.assignments.filter((item) => item.id !== assignment.id),
+    summaries: adjustEmployeeSummary(schedule.summaries, assignment.employeeId, -1)
+  };
+}
+
+function restoreAssignmentInSchedule(
+  schedule: SchedulePayload,
+  assignment: ShiftAssignment
+): SchedulePayload {
+  if (
+    schedule.weekStart.slice(0, 10) !== assignment.weekStart.slice(0, 10) ||
+    schedule.assignments.some((item) => item.id === assignment.id)
+  ) {
+    return schedule;
+  }
+  return {
+    ...schedule,
+    assignments: [...schedule.assignments, assignment],
+    summaries: adjustEmployeeSummary(schedule.summaries, assignment.employeeId, 1)
+  };
+}
+
+function hidePendingAssignmentRemovals(
+  schedule: SchedulePayload,
+  pendingRemovals: ReadonlyMap<string, ShiftAssignment>
+) {
+  return [...pendingRemovals.values()].reduce(removeAssignmentFromSchedule, schedule);
+}
+
+function adjustEmployeeSummary(
+  summaries: EmployeeSummary[],
+  employeeId: string,
+  shiftDelta: number
+) {
+  return summaries.map((summary) =>
+    summary.employeeId === employeeId
+      ? {
+          ...summary,
+          shiftCount: Math.max(0, summary.shiftCount + shiftDelta),
+          workHours: Math.max(0, summary.workHours + shiftDelta * 8)
+        }
+      : summary
+  );
+}
+
 function cellKey(dayIndex: number, shiftType: ShiftType) {
   return `${dayIndex}-${shiftType}`;
-}
-
-function findShiftAvailability(
-  blocks: AvailabilityBlock[],
-  employeeId: string,
-  dayIndex: number,
-  shiftType: ShiftType
-) {
-  return blocks.find(
-    (block) =>
-      block.employeeId === employeeId &&
-      block.dayIndex === dayIndex &&
-      block.shiftType === shiftType
-  );
-}
-
-function findTimeOff(blocks: AvailabilityBlock[], employeeId: string, dayIndex: number) {
-  return blocks.find(
-    (block) =>
-      block.employeeId === employeeId &&
-      block.dayIndex === dayIndex &&
-      block.status === "TIME_OFF"
-  );
-}
-
-function assignmentAvailabilityHint(
-  blocks: AvailabilityBlock[],
-  employeeId: string,
-  dayIndex: number,
-  shiftType: ShiftType
-) {
-  if (isUnavailableForShift(blocks, employeeId, dayIndex, shiftType)) {
-    return "לא זמין";
-  }
-  return findShiftAvailability(blocks, employeeId, dayIndex, shiftType)?.status === "PREFERRED"
-    ? "מעוניין"
-    : "";
-}
-
-function isUnavailableForShift(
-  blocks: AvailabilityBlock[],
-  employeeId: string,
-  dayIndex: number,
-  shiftType: ShiftType
-) {
-  if (findTimeOff(blocks, employeeId, dayIndex)) {
-    return true;
-  }
-  return findShiftAvailability(blocks, employeeId, dayIndex, shiftType)?.status === "UNAVAILABLE";
-}
-
-function availabilityStatusLabel(status: AvailabilityStatus | "AVAILABLE") {
-  const labels = {
-    AVAILABLE: "פנוי",
-    UNAVAILABLE: "לא זמין",
-    PREFERRED: "מעוניין לעבוד",
-    TIME_OFF: "Time Off"
-  };
-  return labels[status];
 }
 
 function employeeColorStyle(employee: Employee | undefined): CSSProperties {
