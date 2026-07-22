@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Download,
   LogOut,
   MessageSquare,
   Plus,
@@ -19,8 +20,10 @@ import {
   UsersRound,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { addDays, formatHebrewDate, getScheduleDays } from "@/lib/dates";
+import { getEmployeeColor } from "@/lib/employeeColors";
+import { buildScheduleCsv, scheduleExportFilename } from "@/lib/scheduleExport";
 import { SHIFT_DEFINITIONS, getShiftTypes } from "@/lib/shifts";
 import type {
   AvailabilityBlock,
@@ -237,6 +240,24 @@ export function ScheduleDashboard({
     window.location.href = "/login";
   }
 
+  function exportSchedule() {
+    const csv = buildScheduleCsv({
+      weekStart,
+      employees: schedule.employees,
+      assignments: schedule.assignments,
+      summaries: schedule.summaries
+    });
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = scheduleExportFilename(weekStart);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setToast("טבלת השיבוץ יוצאה בהצלחה.");
+  }
+
   return (
     <div className="app-frame">
       <aside className="icon-rail" aria-label="ניווט">
@@ -295,16 +316,27 @@ export function ScheduleDashboard({
               <button className="soft-button" onClick={() => setWeekStart(addDays(weekStart, 7))}>
                 <ChevronLeft size={18} />
               </button>
-              <select
-                value={selectedEmployeeId}
-                onChange={(event) => setSelectedEmployeeId(event.target.value)}
+              <button className="export-button" onClick={exportSchedule}>
+                <Download size={17} />
+                ייצוא טבלה
+              </button>
+              <div
+                className="employee-select-control"
+                style={employeeColorStyle(employeesById.get(selectedEmployeeId))}
               >
-                {schedule.employees.map((employee) => (
-                  <option value={employee.id} key={employee.id}>
-                    {employee.name}
-                  </option>
-                ))}
-              </select>
+                <i className="employee-color-dot" aria-hidden="true" />
+                <select
+                  value={selectedEmployeeId}
+                  disabled={currentUser.role !== "MANAGER"}
+                  onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                >
+                  {availabilityEmployees.map((employee) => (
+                    <option value={employee.id} key={employee.id}>
+                      {employee.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </section>
 
@@ -361,9 +393,16 @@ export function ScheduleDashboard({
                               : "שיבוץ"}
                         </button>
                         <div className="assigned-list">
-                          {assignments.map((assignment) => (
-                            <div className="employee-chip" key={assignment.id}>
+                          {assignments.map((assignment) => {
+                            const employee = employeesById.get(assignment.employeeId);
+                            return (
+                            <div
+                              className="employee-chip"
+                              key={assignment.id}
+                              style={employeeColorStyle(employee)}
+                            >
                               <span>
+                                <i className="employee-color-dot" aria-hidden="true" />
                                 {isUnavailableForShift(
                                   schedule.availabilityBlocks,
                                   assignment.employeeId,
@@ -376,7 +415,7 @@ export function ScheduleDashboard({
                                     aria-label="שובץ בניגוד לאילוץ"
                                   />
                                 ) : null}
-                                {employeesById.get(assignment.employeeId)?.name ?? "עובד"}
+                                {employee?.name ?? "עובד"}
                               </span>
                               {currentUser.role === "MANAGER" ? (
                                 <button
@@ -387,7 +426,8 @@ export function ScheduleDashboard({
                                 </button>
                               ) : null}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -406,9 +446,16 @@ export function ScheduleDashboard({
                   {schedule.summaries.map((summary) => {
                     const employee = employeesById.get(summary.employeeId);
                     return (
-                      <div className="summary-item" key={summary.employeeId}>
+                      <div
+                        className="summary-item"
+                        key={summary.employeeId}
+                        style={employeeColorStyle(employee)}
+                      >
                         <div>
-                          <strong>{employee?.name}</strong>
+                          <strong className="employee-name-with-color">
+                            <i className="employee-color-dot" aria-hidden="true" />
+                            {employee?.name}
+                          </strong>
                           <span>
                             {summary.shiftCount}/{summary.maxShifts} משמרות
                           </span>
@@ -512,9 +559,16 @@ export function ScheduleDashboard({
                 const canEdit =
                   currentUser.role === "EMPLOYEE" && employee.userId === currentUser.id;
                 return (
-                  <div className="availability-grid availability-row" key={employee.id}>
+                  <div
+                    className="availability-grid availability-row"
+                    key={employee.id}
+                    style={employeeColorStyle(employee)}
+                  >
                     <div className="availability-employee">
-                      <strong>{employee.name}</strong>
+                      <strong className="employee-name-with-color">
+                        <i className="employee-color-dot" aria-hidden="true" />
+                        {employee.name}
+                      </strong>
                       <span>{canEdit ? "האילוצים שלי" : employee.roleTitle}</span>
                     </div>
                     {days.map((day) => {
@@ -685,6 +739,14 @@ function availabilityStatusLabel(status: AvailabilityStatus | "AVAILABLE") {
     TIME_OFF: "Time Off"
   };
   return labels[status];
+}
+
+function employeeColorStyle(employee: Employee | undefined): CSSProperties {
+  const color = getEmployeeColor(employee?.userId ?? employee?.id ?? "unassigned");
+  return {
+    "--employee-color": color.solid,
+    "--employee-soft": color.soft
+  } as CSSProperties;
 }
 
 function swapStatusLabel(status: ShiftSwapRequest["status"]) {

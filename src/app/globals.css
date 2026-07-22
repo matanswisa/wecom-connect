@@ -131,6 +131,7 @@ select {
 .icon-button,
 .rail-button,
 .add-shift,
+.export-button,
 .toast,
 .swap-actions button {
   border: 0;
@@ -298,6 +299,47 @@ select {
   color: var(--muted);
 }
 
+.export-button {
+  min-height: 40px;
+  border: 1px solid #b8d6fa;
+  background: #fff;
+  color: #1f6fc9;
+  padding: 0 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.employee-select-control {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-right: 4px solid var(--employee-color);
+  border-radius: 8px;
+  background: var(--employee-soft);
+  display: flex;
+  align-items: center;
+  padding-right: 9px;
+}
+
+.employee-select-control select {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+}
+
+.employee-color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--employee-color);
+  flex: 0 0 auto;
+}
+
+.employee-name-with-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .scheduler-page {
   padding: 22px 22px 96px;
 }
@@ -455,7 +497,8 @@ select {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  background: #fff;
+  border-right: 4px solid var(--employee-color);
+  background: var(--employee-soft);
 }
 
 .employee-chip button {
@@ -510,6 +553,10 @@ select {
   justify-content: space-between;
   gap: 10px;
   padding: 10px;
+}
+
+.summary-item {
+  border-right: 4px solid var(--employee-color);
 }
 
 .summary-item div {
@@ -621,6 +668,8 @@ select {
   align-content: center;
   gap: 5px;
   padding: 12px;
+  border-right: 4px solid var(--employee-color);
+  background: var(--employee-soft);
 }
 
 .availability-day {

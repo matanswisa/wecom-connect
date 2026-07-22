@@ -23,12 +23,19 @@ export async function GET(request: Request) {
     listAvailabilityBlocks(weekStart),
     listSwapRequests()
   ]);
+  const visibleAvailabilityBlocks =
+    user.role === "MANAGER"
+      ? availabilityBlocks
+      : availabilityBlocks.filter((block) => {
+          const employee = employees.find((item) => item.id === block.employeeId);
+          return employee?.userId === user.id;
+        });
 
   return NextResponse.json({
     weekStart,
     employees,
     assignments,
-    availabilityBlocks,
+    availabilityBlocks: visibleAvailabilityBlocks,
     swaps,
     summaries: calculateSummaries(employees, assignments)
   });

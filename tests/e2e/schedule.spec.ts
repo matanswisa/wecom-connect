@@ -17,17 +17,16 @@ test("manager sees a complete week and every employee constraint", async ({ page
   await expect(page.locator(".day-header").filter({ hasText: "שבת" })).toBeVisible();
   await expect(page.locator(".availability-row")).toHaveCount(5);
   await expect(page.getByText("מעוניין לעבוד", { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "ייצוא טבלה" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("wecomconnect-schedule-2026-07-19.csv");
 
   await page.screenshot({ path: "/tmp/wecomconnect-manager.png", fullPage: true });
 
   const nightRow = page.locator(".shift-row").filter({ hasText: "לילה" });
   const eveningRow = page.locator(".shift-row").filter({ hasText: "ערב" });
-  const assignmentResponsePromise = page.waitForResponse(
-    (response) => response.url().endsWith("/api/assignments") && response.status() === 201
-  );
   await nightRow.locator(".add-shift").first().click();
-  const assignmentResponse = await assignmentResponsePromise;
-  const { assignment } = (await assignmentResponse.json()) as { assignment: { id: string } };
   await expect(page.getByText("השיבוץ נשמר.")).toBeVisible();
   try {
     await eveningRow.locator(".add-shift").nth(1).click();
@@ -35,7 +34,7 @@ test("manager sees a complete week and every employee constraint", async ({ page
     await expect(page.getByText(/אזהרת 8-8/)).toBeVisible();
     await page.getByRole("button", { name: "ביטול" }).click();
   } finally {
-    await page.request.delete(`/api/assignments/${assignment.id}`);
+    await nightRow.locator(".employee-chip button").first().click();
   }
 });
 
@@ -44,6 +43,7 @@ test("employee can update only their own weekly availability", async ({ page }) 
   await login(page, "noa@wecomconnect.local");
 
   const ownRow = page.locator(".availability-row").filter({ hasText: "נועה כהן" });
+  await expect(page.locator(".employee-select-control option")).toHaveCount(1);
   const ownSelect = ownRow.locator("select").first();
   await expect(ownSelect).toBeEnabled();
   await ownSelect.selectOption("PREFERRED");
