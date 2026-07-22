@@ -10,21 +10,46 @@ async function login(page: Page, email: string, password = "Password123!") {
 
 test("manager sees a complete week and every employee constraint", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wecomconnect-theme", "light");
+  });
   await login(page, "admin", "Wecom123");
 
   await expect(page.getByRole("heading", { name: "לוח משמרות שבועי" })).toBeVisible();
   await expect(page.locator(".day-header").filter({ hasText: "שישי" })).toBeVisible();
   await expect(page.locator(".day-header").filter({ hasText: "שבת" })).toBeVisible();
   await expect(page.locator(".availability-row").first()).toBeVisible();
-  expect(await page.locator(".availability-row").count()).toBe(
-    await page.locator(".summary-item").count()
-  );
+  const employeeCount = await page.locator(".summary-item").count();
+  expect(await page.locator(".availability-row").count()).toBe(Math.min(employeeCount, 5));
+  await expect(page.getByText(new RegExp(`מתוך ${employeeCount}`))).toBeVisible();
   await expect(page.getByText("מעוניין לעבוד", { exact: true })).toBeVisible();
+
+  await page.getByTitle("סינון עובדים").click();
+  const filterDrawer = page.getByRole("dialog", { name: "סינון עובדים" });
+  await filterDrawer.getByRole("checkbox", { name: /בחר הכל/ }).uncheck();
+  await filterDrawer.getByRole("checkbox", { name: /עובד בדיקה/ }).check();
+  await filterDrawer.getByRole("checkbox", { name: /דניאל לוי/ }).check();
+  await page.screenshot({ path: "/tmp/wecomconnect-availability-filter.png", fullPage: true });
+  await filterDrawer.getByRole("button", { name: "הצג 2 עובדים" }).click();
+  await expect(page.locator(".availability-row")).toHaveCount(2);
+  await page.getByTitle("סינון עובדים").click();
+  await page.getByRole("dialog", { name: "סינון עובדים" })
+    .getByRole("checkbox", { name: /בחר הכל/ })
+    .check();
+  await page.getByRole("button", { name: new RegExp(`הצג ${employeeCount} עובדים`) }).click();
+  await expect(page.locator(".availability-row")).toHaveCount(Math.min(employeeCount, 5));
+
+  await page.getByTitle("מצב כהה").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.screenshot({ path: "/tmp/wecomconnect-manager-dark.png", fullPage: true });
+  await page.getByTitle("מצב בהיר").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   await page.getByTitle("התראות").click();
   await expect(page.getByText("אין התראות חדשות.")).toBeVisible();
-  await page.getByTitle("עובדים").click();
-  await expect(page.getByTitle("עובדים")).toHaveClass(/active/);
+  const employeesNavigationButton = page.getByRole("button", { name: "עובדים", exact: true });
+  await employeesNavigationButton.click();
+  await expect(employeesNavigationButton).toHaveClass(/active/);
   await page.getByLabel("חיפוש עובד").fill("עובד בדיקה");
   await expect(page.locator(".summary-item")).toHaveCount(1);
   await page.getByTitle("נקה חיפוש").click();
@@ -72,9 +97,13 @@ test("manager sees a complete week and every employee constraint", async ({ page
   try {
     await page.reload();
     let assignmentPostCount = 0;
+    let assignmentDeleteCount = 0;
     page.on("request", (request) => {
       if (request.method() === "POST" && request.url().endsWith("/api/assignments")) {
         assignmentPostCount += 1;
+      }
+      if (request.method() === "DELETE" && request.url().includes("/api/assignments/")) {
+        assignmentDeleteCount += 1;
       }
     });
     const nightRow = page.locator(".shift-row").filter({ hasText: "לילה" });
@@ -83,17 +112,24 @@ test("manager sees a complete week and every employee constraint", async ({ page
     await nightCell.locator(".add-shift").click();
     const nightPicker = nightCell.locator(".shift-worker-picker");
     await expect(nightPicker.getByRole("button", { name: "שמור" })).toBeDisabled();
-    await nightPicker.getByRole("combobox").selectOption(createdEmployeeId!);
+    await nightPicker.getByRole("option", { name: new RegExp(`עובד אזהרה ${suffix}`) }).click();
     await expect(nightPicker.getByRole("button", { name: "שמור" })).toBeEnabled();
     expect(assignmentPostCount).toBe(0);
     await page.screenshot({ path: "/tmp/wecomconnect-worker-picker.png", fullPage: true });
     await nightPicker.getByRole("button", { name: "שמור" }).click();
     await expect(page.getByText("השיבוץ נשמר.")).toBeVisible();
     expect(assignmentPostCount).toBe(1);
+    const newAssignment = nightCell.locator(".employee-chip").filter({ hasText: `עובד אזהרה ${suffix}` });
+    await newAssignment.getByTitle("הסר שיבוץ").click();
+    await expect(page.getByText(/המחיקה תישמר בעוד .* שניות/)).toBeVisible();
+    expect(assignmentDeleteCount).toBe(0);
+    await page.getByRole("button", { name: "ביטול המחיקה" }).click();
+    await expect(newAssignment).toBeVisible();
+    expect(assignmentDeleteCount).toBe(0);
     const eveningCell = eveningRow.locator(".shift-cell").nth(1);
     await eveningCell.locator(".add-shift").click();
     const eveningPicker = eveningCell.locator(".shift-worker-picker");
-    await eveningPicker.getByRole("combobox").selectOption(createdEmployeeId!);
+    await eveningPicker.getByRole("option", { name: new RegExp(`עובד אזהרה ${suffix}`) }).click();
     await eveningPicker.getByRole("button", { name: "שמור" }).click();
     await expect(page.getByRole("heading", { name: "נדרש אישור חריגה" })).toBeVisible();
     await expect(page.getByText(/אזהרת 8-8/)).toBeVisible();
@@ -134,6 +170,11 @@ test("manager can add, edit, constrain, and delete an employee", async ({ page }
     await expect(page.getByText("העובד נוסף למערכת.")).toBeVisible();
     await expect(page.locator(".summary-item").filter({ hasText: originalName })).toBeVisible();
 
+    await page.getByTitle("סינון עובדים").click();
+    const filterDrawer = page.getByRole("dialog", { name: "סינון עובדים" });
+    await filterDrawer.getByRole("checkbox", { name: /בחר הכל/ }).uncheck();
+    await filterDrawer.getByRole("checkbox", { name: new RegExp(originalName) }).check();
+    await filterDrawer.getByRole("button", { name: "הצג עובד אחד" }).click();
     const availabilityRow = page.locator(".availability-row").filter({ hasText: originalName });
     const firstConstraint = availabilityRow.locator("select").first();
     await expect(firstConstraint).toBeEnabled();
