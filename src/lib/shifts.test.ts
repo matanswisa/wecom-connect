@@ -47,7 +47,7 @@ describe("shift rules", () => {
     );
   });
 
-  it("blocks direct back-to-back shifts", () => {
+  it("warns but allows direct back-to-back shifts", () => {
     const validation = validateAssignment(
       { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 0, shiftType: "EVENING" },
       employee,
@@ -55,7 +55,10 @@ describe("shift rules", () => {
       []
     );
 
-    expect(validation.errors).toContainEqual(expect.objectContaining({ code: "BACK_TO_BACK" }));
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.warnings).toContainEqual(
+      expect.objectContaining({ code: "INSUFFICIENT_REST" })
+    );
   });
 
   it("warns when a night shift is followed by next-day evening shift", () => {
@@ -67,10 +70,12 @@ describe("shift rules", () => {
     );
 
     expect(validation.errors).toHaveLength(0);
-    expect(validation.warnings).toContainEqual(expect.objectContaining({ code: "SHORT_REST" }));
+    expect(validation.warnings).toContainEqual(
+      expect.objectContaining({ code: "EIGHT_EIGHT_REST" })
+    );
   });
 
-  it("blocks a shift that overlaps employee availability blocks", () => {
+  it("warns when a shift overlaps an employee availability block", () => {
     const blocks: AvailabilityBlock[] = [
       {
         id: "block-1",
@@ -91,7 +96,8 @@ describe("shift rules", () => {
       blocks
     );
 
-    expect(validation.errors).toContainEqual(
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.warnings).toContainEqual(
       expect.objectContaining({ code: "AVAILABILITY_BLOCKED" })
     );
   });

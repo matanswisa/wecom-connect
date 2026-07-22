@@ -1,5 +1,6 @@
 import type {
   AssignmentInput,
+  AssignmentIssue,
   AssignmentValidation,
   AvailabilityBlock,
   Employee,
@@ -36,7 +37,8 @@ export const SHIFT_DEFINITIONS: Record<
 };
 
 const SHIFT_ORDER: ShiftType[] = ["MORNING", "EVENING", "NIGHT"];
-const MIN_REST_HOURS = 12;
+const MAX_WEEKLY_SHIFTS = 6;
+const MIN_REST_HOURS = 8;
 
 export function getShiftTypes(): ShiftType[] {
   return SHIFT_ORDER;
@@ -93,10 +95,11 @@ export function validateAssignment(
     (assignment) => assignment.employeeId === input.employeeId
   );
 
-  if (ownAssignments.length >= employee.weeklyMaxShifts) {
+  const weeklyLimit = Math.min(employee.weeklyMaxShifts, MAX_WEEKLY_SHIFTS);
+  if (ownAssignments.length >= weeklyLimit) {
     errors.push({
       code: "WEEKLY_LIMIT",
-      message: `העובד כבר שובץ ל-${employee.weeklyMaxShifts} משמרות השבוע.`
+      message: `העובד כבר שובץ ל-${weeklyLimit} משמרות השבוע.`
     });
   }
 
@@ -113,9 +116,9 @@ export function validateAssignment(
   }
 
   if (isBlocked(input, availabilityBlocks)) {
-    errors.push({
+    warnings.push({
       code: "AVAILABILITY_BLOCKED",
-      message: "העובד חסם את המשמרת או השעות האלו."
+      message: "העובד סימן שאינו זמין למשמרת הזו. אפשר לשבץ לאחר אישור החריגה."
     });
   }
 
@@ -147,41 +150,38 @@ function isBlocked(input: AssignmentInput, availabilityBlocks: AvailabilityBlock
 
 function findRestIssues(input: AssignmentInput, assignments: ShiftAssignment[]) {
   const candidate = getShiftWindow(input.weekStart, input.dayIndex, input.shiftType);
-  const errors = [];
-  const warnings = [];
+  const errors: AssignmentIssue[] = [];
+  const warnings: AssignmentIssue[] = [];
 
   for (const assignment of assignments) {
     const existing = getShiftWindow(assignment.weekStart, assignment.dayIndex, assignment.shiftType);
     const gapAfterExisting = hoursBetween(existing.ends, candidate.starts);
     const gapBeforeExisting = hoursBetween(candidate.ends, existing.starts);
 
-    // Adjacent shifts are blocked completely; short-rest shifts are allowed with a manager warning.
-    if (gapAfterExisting >= 0 && gapAfterExisting < 8) {
-      errors.push({
-        code: "BACK_TO_BACK",
-        message: "אי אפשר לשבץ עובד משמרת אחרי משמרת ללא הפסקה מספקת."
-      });
-    } else if (gapAfterExisting >= 8 && gapAfterExisting < MIN_REST_HOURS) {
-      warnings.push({
-        code: "SHORT_REST",
-        message: "התראה: לעובד יש פחות מ-12 שעות מנוחה בין המשמרות."
-      });
-    }
-
-    if (gapBeforeExisting >= 0 && gapBeforeExisting < 8) {
-      errors.push({
-        code: "BACK_TO_BACK",
-        message: "אי אפשר לשבץ עובד משמרת אחרי משמרת ללא הפסקה מספקת."
-      });
-    } else if (gapBeforeExisting >= 8 && gapBeforeExisting < MIN_REST_HOURS) {
-      warnings.push({
-        code: "SHORT_REST",
-        message: "התראה: לעובד יש פחות מ-12 שעות מנוחה בין המשמרות."
-      });
-    }
+    addRestWarning(gapAfterExisting, warnings);
+    addRestWarning(gapBeforeExisting, warnings);
   }
 
   return { errors: uniqueIssues(errors), warnings: uniqueIssues(warnings) };
+}
+
+function addRestWarning(gapHours: number, warnings: AssignmentIssue[]) {
+  if (gapHours < 0 || gapHours > MIN_REST_HOURS) {
+    return;
+  }
+
+  if (gapHours === MIN_REST_HOURS) {
+    warnings.push({
+      code: "EIGHT_EIGHT_REST",
+      message: "אזהרת 8-8: לעובד יש 8 שעות מנוחה בלבד בין המשמרות."
+    });
+    return;
+  }
+
+  warnings.push({
+    code: "INSUFFICIENT_REST",
+    message: `אזהרה: לעובד יש רק ${gapHours} שעות מנוחה בין המשמרות.`
+  });
 }
 
 function getTimeRange(weekStart: string, dayIndex: number, startsAt: string, endsAt: string) {

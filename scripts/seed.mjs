@@ -43,10 +43,10 @@ await client.query(
   `INSERT INTO employees (name, email, role_title, weekly_min_shifts, weekly_max_shifts)
    VALUES
     ('דניאל לוי', 'daniel@wecomconnect.local', 'אחראי משמרת', 2, 6),
-    ('מאיה אברהם', 'maya@wecomconnect.local', 'עובדת משמרת', 1, 5),
+    ('מאיה אברהם', 'maya@wecomconnect.local', 'עובדת משמרת', 1, 6),
     ('איתי ברק', 'itai@wecomconnect.local', 'עובד משמרת', 1, 6),
-    ('שירה מזרחי', 'shira@wecomconnect.local', 'עובדת משמרת', 1, 4)
-   ON CONFLICT (email) DO NOTHING`
+    ('שירה מזרחי', 'shira@wecomconnect.local', 'עובדת משמרת', 1, 6)
+   ON CONFLICT (email) DO UPDATE SET weekly_max_shifts = 6`
 );
 
 await client.end();

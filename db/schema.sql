@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS availability_blocks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   week_start DATE NOT NULL,
-  day_index INTEGER NOT NULL CHECK (day_index BETWEEN 0 AND 4),
+  day_index INTEGER NOT NULL CHECK (day_index BETWEEN 0 AND 6),
   shift_type TEXT CHECK (shift_type IN ('MORNING', 'EVENING', 'NIGHT')),
   starts_at TIME,
   ends_at TIME,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   week_start DATE NOT NULL,
-  day_index INTEGER NOT NULL CHECK (day_index BETWEEN 0 AND 4),
+  day_index INTEGER NOT NULL CHECK (day_index BETWEEN 0 AND 6),
   shift_type TEXT NOT NULL CHECK (shift_type IN ('MORNING', 'EVENING', 'NIGHT')),
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -59,3 +59,16 @@ CREATE TABLE IF NOT EXISTS shift_swap_requests (
   manager_decided_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Existing installations need their original Sunday-Thursday constraints widened.
+ALTER TABLE availability_blocks
+  DROP CONSTRAINT IF EXISTS availability_blocks_day_index_check;
+ALTER TABLE availability_blocks
+  ADD CONSTRAINT availability_blocks_day_index_check CHECK (day_index BETWEEN 0 AND 6);
+
+ALTER TABLE shift_assignments
+  DROP CONSTRAINT IF EXISTS shift_assignments_day_index_check;
+ALTER TABLE shift_assignments
+  ADD CONSTRAINT shift_assignments_day_index_check CHECK (day_index BETWEEN 0 AND 6);
+
+UPDATE employees SET weekly_max_shifts = 6 WHERE weekly_max_shifts <> 6;

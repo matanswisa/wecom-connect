@@ -23,7 +23,14 @@ export async function POST(request: Request) {
   const employees = await listEmployees();
   const employee = employees.find((item) => item.id === employeeId);
 
-  if (!employee || !weekStart || !["MORNING", "EVENING", "NIGHT"].includes(shiftType)) {
+  if (
+    !employee ||
+    !weekStart ||
+    !Number.isInteger(dayIndex) ||
+    dayIndex < 0 ||
+    dayIndex > 6 ||
+    !["MORNING", "EVENING", "NIGHT"].includes(shiftType)
+  ) {
     return jsonError("A valid employee, week, day, and shift are required.");
   }
 
@@ -40,6 +47,10 @@ export async function POST(request: Request) {
 
   if (validation.errors.length > 0) {
     return jsonError("Assignment violates scheduling rules.", 409, validation);
+  }
+
+  if (validation.warnings.length > 0 && body.acknowledgeWarnings !== true) {
+    return jsonError("Assignment requires warning confirmation.", 409, validation);
   }
 
   const assignment = await createAssignment({

@@ -17,7 +17,14 @@ export async function POST(request: Request) {
   const startsAt = body.startsAt ? String(body.startsAt) : null;
   const endsAt = body.endsAt ? String(body.endsAt) : null;
 
-  if (!employeeId || !weekStart || Number.isNaN(dayIndex) || (!shiftType && (!startsAt || !endsAt))) {
+  if (
+    !employeeId ||
+    !weekStart ||
+    !Number.isInteger(dayIndex) ||
+    dayIndex < 0 ||
+    dayIndex > 6 ||
+    (!shiftType && (!startsAt || !endsAt))
+  ) {
     return jsonError("A valid employee, week, day, and blocked shift or time range are required.");
   }
 

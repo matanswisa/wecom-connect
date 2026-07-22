@@ -23,7 +23,7 @@ export function formatHebrewDate(dateOnly: string): string {
 }
 
 export function getScheduleDays(weekStart: string) {
-  return ["ראשון", "שני", "שלישי", "רביעי", "חמישי"].map((label, index) => ({
+  return ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"].map((label, index) => ({
     index,
     label,
     date: addDays(weekStart, index)
