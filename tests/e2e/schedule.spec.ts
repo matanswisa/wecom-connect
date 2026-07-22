@@ -71,12 +71,30 @@ test("manager sees a complete week and every employee constraint", async ({ page
   expect(createdEmployeeId).toBeTruthy();
   try {
     await page.reload();
-    await page.locator(".employee-select-control select").selectOption(createdEmployeeId!);
+    let assignmentPostCount = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/api/assignments")) {
+        assignmentPostCount += 1;
+      }
+    });
     const nightRow = page.locator(".shift-row").filter({ hasText: "לילה" });
     const eveningRow = page.locator(".shift-row").filter({ hasText: "ערב" });
-    await nightRow.locator(".add-shift").first().click();
+    const nightCell = nightRow.locator(".shift-cell").first();
+    await nightCell.locator(".add-shift").click();
+    const nightPicker = nightCell.locator(".shift-worker-picker");
+    await expect(nightPicker.getByRole("button", { name: "שמור" })).toBeDisabled();
+    await nightPicker.getByRole("combobox").selectOption(createdEmployeeId!);
+    await expect(nightPicker.getByRole("button", { name: "שמור" })).toBeEnabled();
+    expect(assignmentPostCount).toBe(0);
+    await page.screenshot({ path: "/tmp/wecomconnect-worker-picker.png", fullPage: true });
+    await nightPicker.getByRole("button", { name: "שמור" }).click();
     await expect(page.getByText("השיבוץ נשמר.")).toBeVisible();
-    await eveningRow.locator(".add-shift").nth(1).click();
+    expect(assignmentPostCount).toBe(1);
+    const eveningCell = eveningRow.locator(".shift-cell").nth(1);
+    await eveningCell.locator(".add-shift").click();
+    const eveningPicker = eveningCell.locator(".shift-worker-picker");
+    await eveningPicker.getByRole("combobox").selectOption(createdEmployeeId!);
+    await eveningPicker.getByRole("button", { name: "שמור" }).click();
     await expect(page.getByRole("heading", { name: "נדרש אישור חריגה" })).toBeVisible();
     await expect(page.getByText(/אזהרת 8-8/)).toBeVisible();
     await page.getByRole("button", { name: "ביטול" }).click();
@@ -149,8 +167,8 @@ test("regular employee can use their availability controls", async ({ page }) =>
   await login(page, "employee", "Wecom123");
 
   const ownRow = page.locator(".availability-row").filter({ hasText: "עובד בדיקה" });
-  await expect(page.locator(".employee-select-control option")).toHaveCount(1);
   await expect(page.locator(".add-shift")).toHaveCount(0);
+  await expect(page.locator(".shift-worker-picker")).toHaveCount(0);
   await expect(page.getByTitle("הוספת עובד")).toHaveCount(0);
   await expect(page.locator(".employee-shift-state")).toHaveCount(21);
   const ownSelect = ownRow.locator("select").first();

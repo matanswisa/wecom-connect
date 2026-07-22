@@ -325,23 +325,6 @@ select {
   opacity: 0.65;
 }
 
-.employee-select-control {
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-right: 4px solid var(--employee-color);
-  border-radius: 8px;
-  background: var(--employee-soft);
-  display: flex;
-  align-items: center;
-  padding-right: 9px;
-}
-
-.employee-select-control select {
-  min-height: 40px;
-  border: 0;
-  background: transparent;
-}
-
 .employee-color-dot {
   width: 9px;
   height: 9px;
@@ -513,6 +496,7 @@ select {
 }
 
 .shift-cell {
+  position: relative;
   display: grid;
   align-content: start;
   gap: 10px;
@@ -526,14 +510,63 @@ select {
   font-weight: 700;
 }
 
-.add-shift.has-constraint {
-  background: #fff0f3;
-  color: #c2255c;
+.shift-worker-picker {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  z-index: 3;
+  width: min(220px, calc(100vw - 40px));
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: stretch;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #9bc5f5;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(23, 32, 51, 0.18);
 }
 
-.add-shift.is-preferred {
-  background: #edf8e9;
-  color: #3b7a35;
+.shift-worker-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border-color: #9bc5f5;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  grid-column: 1 / -1;
+}
+
+.shift-worker-picker button {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.shift-worker-picker button:last-child {
+  width: 30px;
+}
+
+.shift-worker-picker .picker-save {
+  width: 100%;
+  display: inline-flex;
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.shift-worker-picker .picker-save:disabled {
+  cursor: default;
+  background: #e2e8f0;
+  border-color: #e2e8f0;
+  color: #94a3b8;
 }
 
 .employee-shift-state {
