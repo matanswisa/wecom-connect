@@ -1,4 +1,4 @@
-import { query } from "./db";
+import { getPool, query } from "./db";
 import type {
   AvailabilityBlock,
   AvailabilityStatus,
@@ -95,6 +95,145 @@ export async function listEmployees() {
     "SELECT * FROM employees WHERE is_active = true ORDER BY name ASC"
   );
   return rows.map(toEmployee);
+}
+
+export async function createManagedEmployee(input: {
+  name: string;
+  email: string;
+  roleTitle: string;
+  weeklyMinShifts: number;
+  weeklyMaxShifts: number;
+  passwordHash: string;
+}) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const userResult = await client.query<UserRow>(
+      `INSERT INTO users (email, name, password_hash, role)
+       VALUES ($1, $2, $3, 'EMPLOYEE')
+       RETURNING *`,
+      [input.email, input.name, input.passwordHash]
+    );
+    const user = userResult.rows[0];
+    const employeeResult = await client.query<EmployeeRow>(
+      `INSERT INTO employees
+        (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        user.id,
+        input.name,
+        input.email,
+        input.roleTitle,
+        input.weeklyMinShifts,
+        input.weeklyMaxShifts
+      ]
+    );
+    await client.query("COMMIT");
+    return toEmployee(employeeResult.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateManagedEmployee(input: {
+  id: string;
+  name: string;
+  email: string;
+  roleTitle: string;
+  weeklyMinShifts: number;
+  weeklyMaxShifts: number;
+  passwordHash: string | null;
+}) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const employeeResult = await client.query<EmployeeRow>(
+      `UPDATE employees
+       SET name = $2,
+           email = $3,
+           role_title = $4,
+           weekly_min_shifts = $5,
+           weekly_max_shifts = $6
+       WHERE id = $1
+       RETURNING *`,
+      [
+        input.id,
+        input.name,
+        input.email,
+        input.roleTitle,
+        input.weeklyMinShifts,
+        input.weeklyMaxShifts
+      ]
+    );
+    const employee = employeeResult.rows[0];
+    if (!employee) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    if (employee.user_id) {
+      await client.query(
+        `UPDATE users
+         SET name = $2,
+             email = $3,
+             password_hash = COALESCE($4, password_hash)
+         WHERE id = $1`,
+        [employee.user_id, input.name, input.email, input.passwordHash]
+      );
+    } else if (input.passwordHash) {
+      const userResult = await client.query<UserRow>(
+        `INSERT INTO users (email, name, password_hash, role)
+         VALUES ($1, $2, $3, 'EMPLOYEE')
+         RETURNING *`,
+        [input.email, input.name, input.passwordHash]
+      );
+      await client.query(
+        "UPDATE employees SET user_id = $2 WHERE id = $1",
+        [employee.id, userResult.rows[0].id]
+      );
+    }
+    const finalEmployeeResult = await client.query<EmployeeRow>(
+      "SELECT * FROM employees WHERE id = $1",
+      [employee.id]
+    );
+    await client.query("COMMIT");
+    return toEmployee(finalEmployeeResult.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteManagedEmployee(id: string) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const employeeResult = await client.query<EmployeeRow>(
+      "DELETE FROM employees WHERE id = $1 RETURNING *",
+      [id]
+    );
+    const employee = employeeResult.rows[0];
+    if (!employee) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (employee.user_id) {
+      await client.query("DELETE FROM users WHERE id = $1", [employee.user_id]);
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listAssignments(weekStart: string) {
