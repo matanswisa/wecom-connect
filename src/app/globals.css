@@ -320,6 +320,11 @@ select {
   white-space: nowrap;
 }
 
+.export-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .employee-select-control {
   min-height: 42px;
   border: 1px solid var(--line);
@@ -401,6 +406,36 @@ select {
   border-radius: 8px;
   box-shadow: var(--shadow);
   overflow: auto;
+}
+
+.pdf-only {
+  display: none;
+}
+
+.schedule-pdf-header {
+  min-width: 1280px;
+  min-height: 66px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.schedule-pdf-header div {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.schedule-pdf-header strong {
+  font-size: 18px;
+}
+
+.schedule-pdf-header span {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .grid-header,
@@ -566,6 +601,25 @@ select {
   padding: 16px;
 }
 
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.employee-add-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #b8d6fa;
+  background: #fff;
+  color: var(--blue);
+  padding: 0 10px;
+  font-weight: 700;
+}
+
 .summary-list,
 .swap-list {
   display: grid;
@@ -589,9 +643,39 @@ select {
   border-right: 4px solid var(--employee-color);
 }
 
-.summary-item div {
+.summary-copy {
   display: grid;
   gap: 4px;
+}
+
+.summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.summary-meta > b {
+  white-space: nowrap;
+}
+
+.summary-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.summary-controls button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--blue);
+}
+
+.summary-controls button.delete {
+  color: var(--red);
 }
 
 .compact-form {
@@ -790,6 +874,69 @@ select {
   padding: 20px;
 }
 
+.employee-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgba(23, 32, 51, 0.24);
+  padding: 20px;
+}
+
+.dialog-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dialog-title h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.dialog-title p,
+.dialog-copy {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.employee-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.employee-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.employee-limits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.dialog-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+}
+
 .warning-dialog-icon {
   width: 42px;
   height: 42px;
@@ -798,6 +945,11 @@ select {
   color: #d9480f;
   display: grid;
   place-items: center;
+}
+
+.delete-dialog-icon {
+  background: #fff0f0;
+  color: var(--red);
 }
 
 .warning-dialog ul {
@@ -816,7 +968,8 @@ select {
 }
 
 .soft-action,
-.warning-action {
+.warning-action,
+.delete-action {
   min-height: 38px;
   border-radius: 6px;
   padding: 0 14px;
@@ -832,6 +985,12 @@ select {
 .warning-action {
   border: 0;
   background: #d9480f;
+  color: #fff;
+}
+
+.delete-action {
+  border: 0;
+  background: var(--red);
   color: #fff;
 }
 
@@ -929,6 +1088,10 @@ select {
   }
 
   .side-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-limits {
     grid-template-columns: 1fr;
   }
 

@@ -12,17 +12,23 @@ import {
   Download,
   LogOut,
   MessageSquare,
+  Pencil,
   Plus,
   Repeat2,
   Search,
+  Share2,
   ShieldAlert,
+  Trash2,
   UserRound,
+  UserPlus,
   UsersRound,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { EmployeeEditorDialog, type EmployeeEditor } from "./EmployeeEditorDialog";
 import { addDays, formatHebrewDate, getScheduleDays } from "@/lib/dates";
 import { getEmployeeColor } from "@/lib/employeeColors";
+import { createSchedulePdf, schedulePdfFilename, shareOrDownloadPdf } from "@/lib/schedulePdf";
 import { buildScheduleCsv, scheduleExportFilename } from "@/lib/scheduleExport";
 import { SHIFT_DEFINITIONS, getShiftTypes } from "@/lib/shifts";
 import type {
@@ -75,8 +81,13 @@ export function ScheduleDashboard({
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<NavigationSection>("schedule");
+  const [employeeEditor, setEmployeeEditor] = useState<EmployeeEditor | null>(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
   const [toast, setToast] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingEmployee, setIsSavingEmployee] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const scheduleTableRef = useRef<HTMLDivElement>(null);
 
   const days = useMemo(() => getScheduleDays(weekStart), [weekStart]);
   const assignmentsByCell = useMemo(() => groupAssignments(schedule.assignments), [schedule.assignments]);
@@ -129,7 +140,10 @@ export function ScheduleDashboard({
       setSchedule(payload);
       const ownEmployee = payload.employees.find((employee) => employee.userId === currentUser.id);
       setSelectedEmployeeId(
-        (current) => current || ownEmployee?.id || payload.employees[0]?.id || ""
+        (current) =>
+          payload.employees.some((employee) => employee.id === current)
+            ? current
+            : ownEmployee?.id || payload.employees[0]?.id || ""
       );
     }
     setIsLoading(false);
@@ -293,6 +307,72 @@ export function ScheduleDashboard({
     setToast("טבלת השיבוץ יוצאה בהצלחה.");
   }
 
+  async function exportSchedulePdf() {
+    if (!scheduleTableRef.current || isExportingPdf) {
+      return;
+    }
+    setIsExportingPdf(true);
+    setToast("מכין קובץ PDF...");
+    try {
+      const blob = await createSchedulePdf(scheduleTableRef.current);
+      const result = await shareOrDownloadPdf(blob, schedulePdfFilename(weekStart));
+      setToast(
+        result === "shared"
+          ? "קובץ ה-PDF שותף בהצלחה."
+          : result === "cancelled"
+            ? "השיתוף בוטל."
+            : "קובץ ה-PDF הורד בהצלחה."
+      );
+    } catch (error) {
+      console.error(error);
+      setToast("יצירת קובץ ה-PDF נכשלה.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }
+
+  async function saveEmployee(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!employeeEditor) {
+      return;
+    }
+    setIsSavingEmployee(true);
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const isCreate = employeeEditor.mode === "create";
+    const response = await fetch(
+      isCreate ? "/api/employees" : `/api/employees/${employeeEditor.employee.id}`,
+      {
+        method: isCreate ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    const body = await response.json();
+    setIsSavingEmployee(false);
+    if (!response.ok) {
+      setToast(body.error ?? "שמירת העובד נכשלה.");
+      return;
+    }
+    setEmployeeEditor(null);
+    setToast(isCreate ? "העובד נוסף למערכת." : "פרטי העובד עודכנו.");
+    await loadSchedule();
+  }
+
+  async function deleteEmployee() {
+    if (!employeeToDelete) {
+      return;
+    }
+    const response = await fetch(`/api/employees/${employeeToDelete.id}`, { method: "DELETE" });
+    const body = await response.json();
+    if (!response.ok) {
+      setToast(body.error ?? "מחיקת העובד נכשלה.");
+      return;
+    }
+    setEmployeeToDelete(null);
+    setToast("העובד נמחק מהמערכת.");
+    await loadSchedule();
+  }
+
   function navigateTo(section: NavigationSection, elementId: string) {
     setActiveSection(section);
     document.getElementById(elementId)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -394,6 +474,14 @@ export function ScheduleDashboard({
                 <Download size={17} />
                 ייצוא טבלה
               </button>
+              <button
+                className="export-button"
+                onClick={exportSchedulePdf}
+                disabled={isExportingPdf}
+              >
+                <Share2 size={17} />
+                {isExportingPdf ? "מכין PDF..." : "PDF / שיתוף"}
+              </button>
               <div
                 className="employee-select-control"
                 style={employeeColorStyle(employeesById.get(selectedEmployeeId))}
@@ -415,7 +503,18 @@ export function ScheduleDashboard({
           </section>
 
           <section className="main-grid">
-            <div className="schedule-panel">
+            <div
+              className="schedule-panel"
+              ref={scheduleTableRef}
+              data-pdf-target="schedule"
+            >
+              <div className="schedule-pdf-header pdf-only">
+                <Image src="/wecom-logo.svg" alt="wecom" width={96} height={44} />
+                <div>
+                  <strong>סידור עבודה שבועי</strong>
+                  <span>{formatHebrewDate(weekStart)} - {formatHebrewDate(addDays(weekStart, 6))}</span>
+                </div>
+              </div>
               <div className="grid-header">
                 <div className="shift-label-column">משמרת</div>
                 {days.map((day) => (
@@ -457,6 +556,7 @@ export function ScheduleDashboard({
                         {currentUser.role === "MANAGER" ? (
                           <button
                             className={`add-shift ${selectedEmployeeBlocked ? "has-constraint" : ""} ${selectedEmployeePreferred ? "is-preferred" : ""}`}
+                            data-pdf-hide="true"
                             onClick={() => assignShift(day.index, shiftType)}
                           >
                             {selectedEmployeeBlocked ? <ShieldAlert size={16} /> : <Plus size={16} />}
@@ -467,7 +567,7 @@ export function ScheduleDashboard({
                                 : "שיבוץ"}
                           </button>
                         ) : (
-                          <div className="employee-shift-state">שיבוץ מנהלת</div>
+                          <div className="employee-shift-state" data-pdf-hide="true">שיבוץ מנהלת</div>
                         )}
                         <div className="assigned-list">
                           {assignments
@@ -498,6 +598,7 @@ export function ScheduleDashboard({
                               </span>
                               {currentUser.role === "MANAGER" ? (
                                 <button
+                                  data-pdf-hide="true"
                                   onClick={() => removeAssignment(assignment.id)}
                                   title="הסר שיבוץ"
                                 >
@@ -517,9 +618,22 @@ export function ScheduleDashboard({
 
             <aside className="side-panel">
               <section className="summary-block" id="employees-section">
-                <div className="panel-title">
-                  <UsersRound size={18} />
-                  <h2>סיכום עובדים</h2>
+                <div className="panel-title-row">
+                  <div className="panel-title">
+                    <UsersRound size={18} />
+                    <h2>סיכום עובדים</h2>
+                  </div>
+                  {currentUser.role === "MANAGER" ? (
+                    <button
+                      type="button"
+                      className="employee-add-button"
+                      title="הוספת עובד"
+                      onClick={() => setEmployeeEditor({ mode: "create", employee: null })}
+                    >
+                      <UserPlus size={17} />
+                      הוספה
+                    </button>
+                  ) : null}
                 </div>
                 <div className="summary-list">
                   {schedule.summaries
@@ -532,7 +646,7 @@ export function ScheduleDashboard({
                         key={summary.employeeId}
                         style={employeeColorStyle(employee)}
                       >
-                        <div>
+                        <div className="summary-copy">
                           <strong className="employee-name-with-color">
                             <i className="employee-color-dot" aria-hidden="true" />
                             {employee?.name}
@@ -541,7 +655,28 @@ export function ScheduleDashboard({
                             {summary.shiftCount}/{summary.maxShifts} משמרות
                           </span>
                         </div>
-                        <b>{summary.workHours} שעות</b>
+                        <div className="summary-meta">
+                          <b>{summary.workHours} שעות</b>
+                          {currentUser.role === "MANAGER" && employee ? (
+                            <div className="summary-controls">
+                              <button
+                                type="button"
+                                title={`עריכת ${employee.name}`}
+                                onClick={() => setEmployeeEditor({ mode: "edit", employee })}
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="delete"
+                                title={`מחיקת ${employee.name}`}
+                                onClick={() => setEmployeeToDelete(employee)}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     );
                   })}
@@ -641,7 +776,8 @@ export function ScheduleDashboard({
               </div>
               {availabilityEmployees.map((employee) => {
                 const canEdit =
-                  currentUser.role === "EMPLOYEE" && employee.userId === currentUser.id;
+                  currentUser.role === "MANAGER" ||
+                  (currentUser.role === "EMPLOYEE" && employee.userId === currentUser.id);
                 return (
                   <div
                     className="availability-grid availability-row"
@@ -653,7 +789,11 @@ export function ScheduleDashboard({
                         <i className="employee-color-dot" aria-hidden="true" />
                         {employee.name}
                       </strong>
-                      <span>{canEdit ? "האילוצים שלי" : employee.roleTitle}</span>
+                      <span>
+                        {currentUser.role === "EMPLOYEE" && canEdit
+                          ? "האילוצים שלי"
+                          : employee.roleTitle}
+                      </span>
                     </div>
                     {days.map((day) => {
                       const timeOff = findTimeOff(
@@ -758,6 +898,32 @@ export function ScheduleDashboard({
               >
                 שיבוץ בכל זאת
               </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {employeeEditor ? (
+        <EmployeeEditorDialog
+          key={`${employeeEditor.mode}-${employeeEditor.employee?.id ?? "new"}`}
+          editor={employeeEditor}
+          isSaving={isSavingEmployee}
+          onClose={() => setEmployeeEditor(null)}
+          onSubmit={saveEmployee}
+        />
+      ) : null}
+      {employeeToDelete ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="warning-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+            <div className="warning-dialog-icon delete-dialog-icon"><Trash2 size={21} /></div>
+            <div>
+              <h2 id="delete-title">מחיקת {employeeToDelete.name}</h2>
+              <p className="dialog-copy">
+                המחיקה תסיר גם את השיבוצים, האילוצים ובקשות ההחלפה המשויכים לעובד.
+              </p>
+            </div>
+            <div className="warning-dialog-actions">
+              <button className="soft-action" onClick={() => setEmployeeToDelete(null)}>ביטול</button>
+              <button className="delete-action" onClick={deleteEmployee}>מחיקת עובד</button>
             </div>
           </section>
         </div>
