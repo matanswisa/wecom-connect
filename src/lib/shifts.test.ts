@@ -62,10 +62,12 @@ describe("shift rules", () => {
   });
 
   it("warns when a night shift is followed by next-day evening shift", () => {
+    const nightShift = assignment("1", 0, "NIGHT");
+    nightShift.weekStart = "2026-07-19T00:00:00.000Z";
     const validation = validateAssignment(
       { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 1, shiftType: "EVENING" },
       employee,
-      [assignment("1", 0, "NIGHT")],
+      [nightShift],
       []
     );
 
@@ -85,7 +87,8 @@ describe("shift rules", () => {
         shiftType: "MORNING",
         startsAt: null,
         endsAt: null,
-        reason: "סידור אישי"
+        reason: "סידור אישי",
+        status: "UNAVAILABLE"
       }
     ];
 
@@ -97,6 +100,58 @@ describe("shift rules", () => {
     );
 
     expect(validation.errors).toHaveLength(0);
+    expect(validation.warnings).toContainEqual(
+      expect.objectContaining({ code: "AVAILABILITY_BLOCKED" })
+    );
+  });
+
+  it("does not warn when the employee prefers the shift", () => {
+    const preferred: AvailabilityBlock[] = [
+      {
+        id: "preference-1",
+        employeeId: employee.id,
+        weekStart: "2026-07-19",
+        dayIndex: 5,
+        shiftType: "EVENING",
+        startsAt: null,
+        endsAt: null,
+        reason: "מעוניין לעבוד",
+        status: "PREFERRED"
+      }
+    ];
+
+    const validation = validateAssignment(
+      { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 5, shiftType: "EVENING" },
+      employee,
+      [],
+      preferred
+    );
+
+    expect(validation).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("warns for any shift on a Time Off day", () => {
+    const timeOff: AvailabilityBlock[] = [
+      {
+        id: "time-off-1",
+        employeeId: employee.id,
+        weekStart: "2026-07-19",
+        dayIndex: 6,
+        shiftType: null,
+        startsAt: null,
+        endsAt: null,
+        reason: "Time Off",
+        status: "TIME_OFF"
+      }
+    ];
+
+    const validation = validateAssignment(
+      { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 6, shiftType: "NIGHT" },
+      employee,
+      [],
+      timeOff
+    );
+
     expect(validation.warnings).toContainEqual(
       expect.objectContaining({ code: "AVAILABILITY_BLOCKED" })
     );

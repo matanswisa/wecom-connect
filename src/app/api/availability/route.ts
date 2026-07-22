@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import type { ShiftType } from "@/lib/types";
+import type { AvailabilityStatus, ShiftType } from "@/lib/types";
 import { isApiError, jsonError, requireApiUser } from "@/server/api";
-import { createAvailabilityBlock } from "@/server/repositories";
+import { createAvailabilityBlock, listEmployees } from "@/server/repositories";
 
 export async function POST(request: Request) {
   const user = requireApiUser();
@@ -16,16 +16,23 @@ export async function POST(request: Request) {
   const shiftType = body.shiftType ? (String(body.shiftType) as ShiftType) : null;
   const startsAt = body.startsAt ? String(body.startsAt) : null;
   const endsAt = body.endsAt ? String(body.endsAt) : null;
+  const status = String(body.status ?? "UNAVAILABLE") as AvailabilityStatus;
+  const employee = (await listEmployees()).find((item) => item.id === employeeId);
 
   if (
-    !employeeId ||
+    !employee ||
     !weekStart ||
     !Number.isInteger(dayIndex) ||
     dayIndex < 0 ||
     dayIndex > 6 ||
-    (!shiftType && (!startsAt || !endsAt))
+    !["UNAVAILABLE", "PREFERRED", "TIME_OFF"].includes(status) ||
+    (status !== "TIME_OFF" && !shiftType && (!startsAt || !endsAt))
   ) {
     return jsonError("A valid employee, week, day, and blocked shift or time range are required.");
+  }
+
+  if (user.role === "EMPLOYEE" && employee.userId !== user.id) {
+    return jsonError("Employees can only update their own availability.", 403);
   }
 
   const block = await createAvailabilityBlock({
@@ -35,7 +42,8 @@ export async function POST(request: Request) {
     shiftType,
     startsAt,
     endsAt,
-    reason: String(body.reason ?? "")
+    reason: String(body.reason ?? ""),
+    status
   });
 
   return NextResponse.json({ block }, { status: 201 });

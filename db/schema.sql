@@ -30,11 +30,16 @@ CREATE TABLE IF NOT EXISTS availability_blocks (
   starts_at TIME,
   ends_at TIME,
   reason TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'UNAVAILABLE' CHECK (status IN ('UNAVAILABLE', 'PREFERRED', 'TIME_OFF')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (
-    shift_type IS NOT NULL OR (starts_at IS NOT NULL AND ends_at IS NOT NULL)
+    status = 'TIME_OFF' OR shift_type IS NOT NULL OR (starts_at IS NOT NULL AND ends_at IS NOT NULL)
   )
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS availability_blocks_shift_unique
+  ON availability_blocks (employee_id, week_start, day_index, shift_type)
+  WHERE shift_type IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS shift_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -61,6 +66,24 @@ CREATE TABLE IF NOT EXISTS shift_swap_requests (
 );
 
 -- Existing installations need their original Sunday-Thursday constraints widened.
+ALTER TABLE availability_blocks
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'UNAVAILABLE';
+ALTER TABLE availability_blocks
+  DROP CONSTRAINT IF EXISTS availability_blocks_status_check;
+ALTER TABLE availability_blocks
+  ADD CONSTRAINT availability_blocks_status_check
+  CHECK (status IN ('UNAVAILABLE', 'PREFERRED', 'TIME_OFF'));
+ALTER TABLE availability_blocks
+  DROP CONSTRAINT IF EXISTS availability_blocks_check;
+ALTER TABLE availability_blocks
+  DROP CONSTRAINT IF EXISTS availability_blocks_window_check;
+ALTER TABLE availability_blocks
+  ADD CONSTRAINT availability_blocks_window_check
+  CHECK (status = 'TIME_OFF' OR shift_type IS NOT NULL OR (starts_at IS NOT NULL AND ends_at IS NOT NULL));
+CREATE UNIQUE INDEX IF NOT EXISTS availability_blocks_time_off_unique
+  ON availability_blocks (employee_id, week_start, day_index)
+  WHERE status = 'TIME_OFF';
+
 ALTER TABLE availability_blocks
   DROP CONSTRAINT IF EXISTS availability_blocks_day_index_check;
 ALTER TABLE availability_blocks

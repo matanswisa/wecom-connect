@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  AlertTriangle,
   Bell,
   CalendarDays,
   Check,
@@ -23,6 +24,7 @@ import { addDays, formatHebrewDate, getScheduleDays } from "@/lib/dates";
 import { SHIFT_DEFINITIONS, getShiftTypes } from "@/lib/shifts";
 import type {
   AvailabilityBlock,
+  AvailabilityStatus,
   Employee,
   EmployeeSummary,
   ShiftAssignment,
@@ -38,6 +40,12 @@ interface SchedulePayload {
   availabilityBlocks: AvailabilityBlock[];
   swaps: ShiftSwapRequest[];
   summaries: EmployeeSummary[];
+}
+
+interface PendingAssignment {
+  dayIndex: number;
+  shiftType: ShiftType;
+  warnings: string[];
 }
 
 const EMPTY_SCHEDULE: SchedulePayload = {
@@ -59,6 +67,7 @@ export function ScheduleDashboard({
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [schedule, setSchedule] = useState<SchedulePayload>(EMPTY_SCHEDULE);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
   const [toast, setToast] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -68,6 +77,13 @@ export function ScheduleDashboard({
     () => new Map(schedule.employees.map((employee) => [employee.id, employee])),
     [schedule.employees]
   );
+  const availabilityEmployees = useMemo(
+    () =>
+      currentUser.role === "MANAGER"
+        ? schedule.employees
+        : schedule.employees.filter((employee) => employee.userId === currentUser.id),
+    [currentUser.id, currentUser.role, schedule.employees]
+  );
 
   const loadSchedule = useCallback(async (nextWeekStart = weekStart) => {
     setIsLoading(true);
@@ -75,16 +91,23 @@ export function ScheduleDashboard({
     if (response.ok) {
       const payload = (await response.json()) as SchedulePayload;
       setSchedule(payload);
-      setSelectedEmployeeId((current) => current || payload.employees[0]?.id || "");
+      const ownEmployee = payload.employees.find((employee) => employee.userId === currentUser.id);
+      setSelectedEmployeeId(
+        (current) => current || ownEmployee?.id || payload.employees[0]?.id || ""
+      );
     }
     setIsLoading(false);
-  }, [weekStart]);
+  }, [currentUser.id, weekStart]);
 
   useEffect(() => {
     void loadSchedule(weekStart);
   }, [weekStart, loadSchedule]);
 
-  async function assignShift(dayIndex: number, shiftType: ShiftType) {
+  async function assignShift(
+    dayIndex: number,
+    shiftType: ShiftType,
+    acknowledgeWarnings = false
+  ) {
     if (!selectedEmployeeId) {
       setToast("צריך לבחור עובד לשיבוץ.");
       return;
@@ -93,17 +116,30 @@ export function ScheduleDashboard({
     const response = await fetch("/api/assignments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeId: selectedEmployeeId, weekStart, dayIndex, shiftType })
+      body: JSON.stringify({
+        employeeId: selectedEmployeeId,
+        weekStart,
+        dayIndex,
+        shiftType,
+        acknowledgeWarnings
+      })
     });
     const body = await response.json();
 
     if (!response.ok) {
+      const warnings = (body.details?.warnings ?? []).map(
+        (warning: { message: string }) => warning.message
+      );
+      if (warnings.length > 0 && !(body.details?.errors?.length > 0)) {
+        setPendingAssignment({ dayIndex, shiftType, warnings });
+        return;
+      }
       setToast(body.details?.errors?.[0]?.message ?? body.error ?? "השיבוץ נכשל.");
       return;
     }
 
-    const warning = body.validation?.warnings?.[0]?.message;
-    setToast(warning ?? "השיבוץ נשמר.");
+    setPendingAssignment(null);
+    setToast(acknowledgeWarnings ? "השיבוץ נשמר לאחר אישור האזהרה." : "השיבוץ נשמר.");
     await loadSchedule();
   }
 
@@ -112,18 +148,60 @@ export function ScheduleDashboard({
     await loadSchedule();
   }
 
-  async function createBlock(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const response = await fetch("/api/availability", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(formData.entries()))
-    });
+  async function setShiftAvailability(
+    employeeId: string,
+    dayIndex: number,
+    shiftType: ShiftType,
+    status: AvailabilityStatus | "AVAILABLE"
+  ) {
+    const existing = findShiftAvailability(
+      schedule.availabilityBlocks,
+      employeeId,
+      dayIndex,
+      shiftType
+    );
+    if (status === "AVAILABLE" && !existing) {
+      return;
+    }
+    const response = status === "AVAILABLE" && existing
+      ? await fetch(`/api/availability/${existing.id}`, { method: "DELETE" })
+      : await fetch("/api/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId,
+            weekStart,
+            dayIndex,
+            shiftType,
+            status,
+            reason: availabilityStatusLabel(status)
+          })
+        });
 
-    setToast(response.ok ? "החסימה נשמרה." : "שמירת החסימה נכשלה.");
+    setToast(response.ok ? "הזמינות עודכנה." : "עדכון הזמינות נכשל.");
     if (response.ok) {
-      event.currentTarget.reset();
+      await loadSchedule();
+    }
+  }
+
+  async function toggleTimeOff(employeeId: string, dayIndex: number) {
+    const existing = findTimeOff(schedule.availabilityBlocks, employeeId, dayIndex);
+    const response = existing
+      ? await fetch(`/api/availability/${existing.id}`, { method: "DELETE" })
+      : await fetch("/api/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId,
+            weekStart,
+            dayIndex,
+            status: "TIME_OFF",
+            reason: "Time Off"
+          })
+        });
+
+    setToast(response.ok ? (existing ? "החופשה הוסרה." : "החופשה נשמרה.") : "עדכון החופשה נכשל.");
+    if (response.ok) {
       await loadSchedule();
     }
   }
@@ -212,7 +290,7 @@ export function ScheduleDashboard({
                 <ChevronRight size={18} />
               </button>
               <div className="week-pill">
-                {formatHebrewDate(weekStart)} - {formatHebrewDate(addDays(weekStart, 4))}
+                {formatHebrewDate(weekStart)} - {formatHebrewDate(addDays(weekStart, 6))}
               </div>
               <button className="soft-button" onClick={() => setWeekStart(addDays(weekStart, 7))}>
                 <ChevronLeft size={18} />
@@ -254,20 +332,52 @@ export function ScheduleDashboard({
                   {days.map((day) => {
                     const key = cellKey(day.index, shiftType);
                     const assignments = assignmentsByCell.get(key) ?? [];
+                    const selectedEmployeeBlocked = isUnavailableForShift(
+                      schedule.availabilityBlocks,
+                      selectedEmployeeId,
+                      day.index,
+                      shiftType
+                    );
+                    const selectedEmployeePreferred = Boolean(
+                      findShiftAvailability(
+                        schedule.availabilityBlocks,
+                        selectedEmployeeId,
+                        day.index,
+                        shiftType
+                      )?.status === "PREFERRED"
+                    );
                     return (
                       <div className="shift-cell" key={key}>
                         <button
-                          className="add-shift"
+                          className={`add-shift ${selectedEmployeeBlocked ? "has-constraint" : ""} ${selectedEmployeePreferred ? "is-preferred" : ""}`}
                           onClick={() => assignShift(day.index, shiftType)}
                           disabled={currentUser.role !== "MANAGER"}
                         >
-                          <Plus size={16} />
-                          שיבוץ
+                          {selectedEmployeeBlocked ? <ShieldAlert size={16} /> : <Plus size={16} />}
+                          {selectedEmployeeBlocked
+                            ? "שיבוץ בחריגה"
+                            : selectedEmployeePreferred
+                              ? "שיבוץ מועדף"
+                              : "שיבוץ"}
                         </button>
                         <div className="assigned-list">
                           {assignments.map((assignment) => (
                             <div className="employee-chip" key={assignment.id}>
-                              <span>{employeesById.get(assignment.employeeId)?.name ?? "עובד"}</span>
+                              <span>
+                                {isUnavailableForShift(
+                                  schedule.availabilityBlocks,
+                                  assignment.employeeId,
+                                  day.index,
+                                  shiftType
+                                ) ? (
+                                  <ShieldAlert
+                                    className="assignment-warning"
+                                    size={14}
+                                    aria-label="שובץ בניגוד לאילוץ"
+                                  />
+                                ) : null}
+                                {employeesById.get(assignment.employeeId)?.name ?? "עובד"}
+                              </span>
                               {currentUser.role === "MANAGER" ? (
                                 <button
                                   onClick={() => removeAssignment(assignment.id)}
@@ -308,42 +418,6 @@ export function ScheduleDashboard({
                     );
                   })}
                 </div>
-              </section>
-
-              <section className="summary-block">
-                <div className="panel-title">
-                  <ShieldAlert size={18} />
-                  <h2>חסימות</h2>
-                </div>
-                <form className="compact-form" onSubmit={createBlock}>
-                  <select name="employeeId" required defaultValue="">
-                    <option value="" disabled>
-                      עובד
-                    </option>
-                    {schedule.employees.map((employee) => (
-                      <option value={employee.id} key={employee.id}>
-                        {employee.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input type="hidden" name="weekStart" value={weekStart} />
-                  <select name="dayIndex" required defaultValue="0">
-                    {days.map((day) => (
-                      <option value={day.index} key={day.index}>
-                        {day.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select name="shiftType" required defaultValue="MORNING">
-                    {getShiftTypes().map((shiftType) => (
-                      <option value={shiftType} key={shiftType}>
-                        {SHIFT_DEFINITIONS[shiftType].label}
-                      </option>
-                    ))}
-                  </select>
-                  <input name="reason" placeholder="סיבה" />
-                  <button className="primary-button">שמור חסימה</button>
-                </form>
               </section>
 
               <section className="summary-block">
@@ -408,6 +482,98 @@ export function ScheduleDashboard({
             </aside>
           </section>
 
+          <section className="availability-panel">
+            <div className="availability-heading">
+              <div className="panel-title">
+                <ShieldAlert size={18} />
+                <h2>אילוצים שבועיים</h2>
+              </div>
+              <div className="availability-legend">
+                <span className="legend-morning">בוקר</span>
+                <span className="legend-evening">ערב</span>
+                <span className="legend-night">לילה</span>
+                <span className="legend-time-off">Time Off</span>
+                <span className="legend-unavailable">לא זמין</span>
+                <span className="legend-preferred">מעוניין לעבוד</span>
+                <span className="legend-open">משמרת פתוחה</span>
+              </div>
+            </div>
+            <div className="availability-scroll">
+              <div className="availability-grid availability-header">
+                <div>עובד</div>
+                {days.map((day) => (
+                  <div key={day.index}>
+                    <strong>{day.label}</strong>
+                    <span>{formatHebrewDate(day.date)}</span>
+                  </div>
+                ))}
+              </div>
+              {availabilityEmployees.map((employee) => {
+                const canEdit =
+                  currentUser.role === "EMPLOYEE" && employee.userId === currentUser.id;
+                return (
+                  <div className="availability-grid availability-row" key={employee.id}>
+                    <div className="availability-employee">
+                      <strong>{employee.name}</strong>
+                      <span>{canEdit ? "האילוצים שלי" : employee.roleTitle}</span>
+                    </div>
+                    {days.map((day) => {
+                      const timeOff = findTimeOff(
+                        schedule.availabilityBlocks,
+                        employee.id,
+                        day.index
+                      );
+                      return (
+                        <div className={`availability-day ${timeOff ? "is-time-off" : ""}`} key={day.index}>
+                          <button
+                            type="button"
+                            className={`time-off-toggle ${timeOff ? "active" : ""}`}
+                            aria-pressed={Boolean(timeOff)}
+                            disabled={!canEdit}
+                            onClick={() => toggleTimeOff(employee.id, day.index)}
+                          >
+                            Time Off
+                          </button>
+                          {getShiftTypes().map((shiftType) => {
+                            const availability = findShiftAvailability(
+                              schedule.availabilityBlocks,
+                              employee.id,
+                              day.index,
+                              shiftType
+                            );
+                            const value = availability?.status ?? "AVAILABLE";
+                            return (
+                              <label className={`availability-choice ${value.toLowerCase()}`} key={shiftType}>
+                                <span>{SHIFT_DEFINITIONS[shiftType].label}</span>
+                                <select
+                                  aria-label={`${employee.name}, ${day.label}, ${SHIFT_DEFINITIONS[shiftType].label}`}
+                                  value={value}
+                                  disabled={!canEdit || Boolean(timeOff)}
+                                  onChange={(event) =>
+                                    setShiftAvailability(
+                                      employee.id,
+                                      day.index,
+                                      shiftType,
+                                      event.target.value as AvailabilityStatus | "AVAILABLE"
+                                    )
+                                  }
+                                >
+                                  <option value="AVAILABLE">פנוי</option>
+                                  <option value="PREFERRED">מעוניין</option>
+                                  <option value="UNAVAILABLE">לא זמין</option>
+                                </select>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
           <footer className="bottom-summary">
             <div>
               <Clock3 size={18} />
@@ -434,6 +600,30 @@ export function ScheduleDashboard({
           {toast}
         </button>
       ) : null}
+      {pendingAssignment ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="warning-dialog" role="dialog" aria-modal="true" aria-labelledby="warning-title">
+            <div className="warning-dialog-icon"><AlertTriangle size={22} /></div>
+            <div>
+              <h2 id="warning-title">נדרש אישור חריגה</h2>
+              <ul>
+                {pendingAssignment.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </div>
+            <div className="warning-dialog-actions">
+              <button className="soft-action" onClick={() => setPendingAssignment(null)}>ביטול</button>
+              <button
+                className="warning-action"
+                onClick={() =>
+                  assignShift(pendingAssignment.dayIndex, pendingAssignment.shiftType, true)
+                }
+              >
+                שיבוץ בכל זאת
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {isLoading ? <div className="loading-bar" /> : null}
     </div>
   );
@@ -450,6 +640,51 @@ function groupAssignments(assignments: ShiftAssignment[]) {
 
 function cellKey(dayIndex: number, shiftType: ShiftType) {
   return `${dayIndex}-${shiftType}`;
+}
+
+function findShiftAvailability(
+  blocks: AvailabilityBlock[],
+  employeeId: string,
+  dayIndex: number,
+  shiftType: ShiftType
+) {
+  return blocks.find(
+    (block) =>
+      block.employeeId === employeeId &&
+      block.dayIndex === dayIndex &&
+      block.shiftType === shiftType
+  );
+}
+
+function findTimeOff(blocks: AvailabilityBlock[], employeeId: string, dayIndex: number) {
+  return blocks.find(
+    (block) =>
+      block.employeeId === employeeId &&
+      block.dayIndex === dayIndex &&
+      block.status === "TIME_OFF"
+  );
+}
+
+function isUnavailableForShift(
+  blocks: AvailabilityBlock[],
+  employeeId: string,
+  dayIndex: number,
+  shiftType: ShiftType
+) {
+  if (findTimeOff(blocks, employeeId, dayIndex)) {
+    return true;
+  }
+  return findShiftAvailability(blocks, employeeId, dayIndex, shiftType)?.status === "UNAVAILABLE";
+}
+
+function availabilityStatusLabel(status: AvailabilityStatus | "AVAILABLE") {
+  const labels = {
+    AVAILABLE: "פנוי",
+    UNAVAILABLE: "לא זמין",
+    PREFERRED: "מעוניין לעבוד",
+    TIME_OFF: "Time Off"
+  };
+  return labels[status];
 }
 
 function swapStatusLabel(status: ShiftSwapRequest["status"]) {

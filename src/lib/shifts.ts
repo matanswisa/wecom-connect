@@ -45,7 +45,7 @@ export function getShiftTypes(): ShiftType[] {
 }
 
 export function getShiftWindow(weekStart: string, dayIndex: number, shiftType: ShiftType) {
-  const base = new Date(`${weekStart}T00:00:00.000Z`);
+  const base = new Date(`${weekStart.slice(0, 10)}T00:00:00.000Z`);
   base.setUTCDate(base.getUTCDate() + dayIndex);
 
   const definition = SHIFT_DEFINITIONS[shiftType];
@@ -133,8 +133,17 @@ function isBlocked(input: AssignmentInput, availabilityBlocks: AvailabilityBlock
   const candidate = getShiftWindow(input.weekStart, input.dayIndex, input.shiftType);
 
   return availabilityBlocks
-    .filter((block) => block.employeeId === input.employeeId && block.dayIndex === input.dayIndex)
+    .filter(
+      (block) =>
+        block.employeeId === input.employeeId &&
+        block.dayIndex === input.dayIndex &&
+        block.status !== "PREFERRED"
+    )
     .some((block) => {
+      if (block.status === "TIME_OFF") {
+        return true;
+      }
+
       if (block.shiftType) {
         return block.shiftType === input.shiftType;
       }
@@ -185,7 +194,7 @@ function addRestWarning(gapHours: number, warnings: AssignmentIssue[]) {
 }
 
 function getTimeRange(weekStart: string, dayIndex: number, startsAt: string, endsAt: string) {
-  const base = new Date(`${weekStart}T00:00:00.000Z`);
+  const base = new Date(`${weekStart.slice(0, 10)}T00:00:00.000Z`);
   base.setUTCDate(base.getUTCDate() + dayIndex);
 
   const [startHour, startMinute] = startsAt.split(":").map(Number);

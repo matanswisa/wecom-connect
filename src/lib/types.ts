@@ -2,6 +2,8 @@ export type Role = "MANAGER" | "EMPLOYEE";
 
 export type ShiftType = "MORNING" | "EVENING" | "NIGHT";
 
+export type AvailabilityStatus = "UNAVAILABLE" | "PREFERRED" | "TIME_OFF";
+
 export type SwapStatus =
   | "PENDING_EMPLOYEE"
   | "DECLINED_BY_EMPLOYEE"
@@ -36,6 +38,7 @@ export interface AvailabilityBlock {
   startsAt: string | null;
   endsAt: string | null;
   reason: string;
+  status: AvailabilityStatus;
 }
 
 export interface ShiftAssignment {

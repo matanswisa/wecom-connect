@@ -1,6 +1,7 @@
 import { query } from "./db";
 import type {
   AvailabilityBlock,
+  AvailabilityStatus,
   Employee,
   Role,
   ShiftAssignment,
@@ -31,18 +32,19 @@ interface EmployeeRow {
 interface AvailabilityRow {
   id: string;
   employee_id: string;
-  week_start: string;
+  week_start: string | Date;
   day_index: number;
   shift_type: ShiftType | null;
   starts_at: string | null;
   ends_at: string | null;
   reason: string;
+  status: AvailabilityStatus;
 }
 
 interface AssignmentRow {
   id: string;
   employee_id: string;
-  week_start: string;
+  week_start: string | Date;
   day_index: number;
   shift_type: ShiftType;
   notes: string;
@@ -111,6 +113,11 @@ export async function listAvailabilityBlocks(weekStart: string) {
   return rows.map(toAvailabilityBlock);
 }
 
+export async function findAvailabilityBlock(id: string) {
+  const [row] = await query<AvailabilityRow>("SELECT * FROM availability_blocks WHERE id = $1", [id]);
+  return row ? toAvailabilityBlock(row) : null;
+}
+
 export async function createAssignment(input: {
   employeeId: string;
   weekStart: string;
@@ -139,11 +146,22 @@ export async function createAvailabilityBlock(input: {
   startsAt: string | null;
   endsAt: string | null;
   reason: string;
+  status: AvailabilityStatus;
 }) {
+  const conflictClause = input.shiftType
+    ? `ON CONFLICT (employee_id, week_start, day_index, shift_type)
+       WHERE shift_type IS NOT NULL
+       DO UPDATE SET reason = EXCLUDED.reason, status = EXCLUDED.status`
+    : input.status === "TIME_OFF"
+      ? `ON CONFLICT (employee_id, week_start, day_index)
+         WHERE status = 'TIME_OFF'
+         DO UPDATE SET reason = EXCLUDED.reason`
+      : "";
   const [block] = await query<AvailabilityRow>(
     `INSERT INTO availability_blocks
-      (employee_id, week_start, day_index, shift_type, starts_at, ends_at, reason)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+      (employee_id, week_start, day_index, shift_type, starts_at, ends_at, reason, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ${conflictClause}
      RETURNING *`,
     [
       input.employeeId,
@@ -152,10 +170,15 @@ export async function createAvailabilityBlock(input: {
       input.shiftType,
       input.startsAt,
       input.endsAt,
-      input.reason
+      input.reason,
+      input.status
     ]
   );
   return toAvailabilityBlock(block);
+}
+
+export async function deleteAvailabilityBlock(id: string) {
+  await query("DELETE FROM availability_blocks WHERE id = $1", [id]);
 }
 
 export async function listSwapRequests() {
@@ -219,12 +242,13 @@ function toAvailabilityBlock(row: AvailabilityRow): AvailabilityBlock {
   return {
     id: row.id,
     employeeId: row.employee_id,
-    weekStart: row.week_start,
+    weekStart: normalizeDateOnly(row.week_start),
     dayIndex: row.day_index,
     shiftType: row.shift_type,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
-    reason: row.reason
+    reason: row.reason,
+    status: row.status
   };
 }
 
@@ -232,11 +256,15 @@ function toAssignment(row: AssignmentRow): ShiftAssignment {
   return {
     id: row.id,
     employeeId: row.employee_id,
-    weekStart: row.week_start,
+    weekStart: normalizeDateOnly(row.week_start),
     dayIndex: row.day_index,
     shiftType: row.shift_type,
     notes: row.notes
   };
+}
+
+function normalizeDateOnly(value: string | Date): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
 function toSwap(row: SwapRow): ShiftSwapRequest {
