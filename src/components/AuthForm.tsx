@@ -61,8 +61,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
             </>
           ) : null}
           <label>
-            אימייל
-            <input name="email" type="email" required autoComplete="email" />
+            {mode === "login" ? "אימייל או שם משתמש" : "אימייל"}
+            <input
+              name="email"
+              type={mode === "login" ? "text" : "email"}
+              required
+              autoComplete="username"
+            />
           </label>
           <label>
             סיסמה

@@ -51,6 +51,8 @@ interface PendingAssignment {
   warnings: string[];
 }
 
+type NavigationSection = "schedule" | "employees" | "notifications" | "swaps";
+
 const EMPTY_SCHEDULE: SchedulePayload = {
   weekStart: "",
   employees: [],
@@ -71,6 +73,8 @@ export function ScheduleDashboard({
   const [schedule, setSchedule] = useState<SchedulePayload>(EMPTY_SCHEDULE);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSection, setActiveSection] = useState<NavigationSection>("schedule");
   const [toast, setToast] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -80,12 +84,41 @@ export function ScheduleDashboard({
     () => new Map(schedule.employees.map((employee) => [employee.id, employee])),
     [schedule.employees]
   );
-  const availabilityEmployees = useMemo(
+  const ownEmployee = useMemo(
+    () => schedule.employees.find((employee) => employee.userId === currentUser.id),
+    [currentUser.id, schedule.employees]
+  );
+  const selectableEmployees = useMemo(
     () =>
       currentUser.role === "MANAGER"
         ? schedule.employees
         : schedule.employees.filter((employee) => employee.userId === currentUser.id),
     [currentUser.id, currentUser.role, schedule.employees]
+  );
+  const matchingEmployeeIds = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase("he");
+    return new Set(
+      schedule.employees
+        .filter((employee) =>
+          !query || [employee.name, employee.email, employee.roleTitle]
+            .some((value) => value.toLocaleLowerCase("he").includes(query))
+        )
+        .map((employee) => employee.id)
+    );
+  }, [schedule.employees, searchQuery]);
+  const availabilityEmployees = useMemo(
+    () =>
+      currentUser.role === "MANAGER"
+        ? schedule.employees.filter((employee) => matchingEmployeeIds.has(employee.id))
+        : selectableEmployees,
+    [currentUser.role, matchingEmployeeIds, schedule.employees, selectableEmployees]
+  );
+  const swapSourceAssignments = useMemo(
+    () =>
+      currentUser.role === "MANAGER"
+        ? schedule.assignments
+        : schedule.assignments.filter((assignment) => assignment.employeeId === ownEmployee?.id),
+    [currentUser.role, ownEmployee?.id, schedule.assignments]
   );
 
   const loadSchedule = useCallback(async (nextWeekStart = weekStart) => {
@@ -218,7 +251,8 @@ export function ScheduleDashboard({
       body: JSON.stringify(Object.fromEntries(formData.entries()))
     });
 
-    setToast(response.ok ? "בקשת ההחלפה נשלחה." : "בקשת ההחלפה נכשלה.");
+    const body = await response.json();
+    setToast(response.ok ? "בקשת ההחלפה נשלחה." : body.error ?? "בקשת ההחלפה נכשלה.");
     if (response.ok) {
       event.currentTarget.reset();
       await loadSchedule();
@@ -231,7 +265,8 @@ export function ScheduleDashboard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action })
     });
-    setToast(response.ok ? "סטטוס ההחלפה עודכן." : "עדכון ההחלפה נכשל.");
+    const body = await response.json();
+    setToast(response.ok ? "סטטוס ההחלפה עודכן." : body.error ?? "עדכון ההחלפה נכשל.");
     await loadSchedule();
   }
 
@@ -258,22 +293,51 @@ export function ScheduleDashboard({
     setToast("טבלת השיבוץ יוצאה בהצלחה.");
   }
 
+  function navigateTo(section: NavigationSection, elementId: string) {
+    setActiveSection(section);
+    document.getElementById(elementId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function showNotifications() {
+    setActiveSection("notifications");
+    const pending = schedule.swaps.filter((swap) =>
+      swap.status === "PENDING_EMPLOYEE" || swap.status === "PENDING_MANAGER"
+    ).length;
+    setToast(pending > 0 ? `${pending} בקשות החלפה ממתינות לאישור.` : "אין התראות חדשות.");
+  }
+
   return (
     <div className="app-frame">
       <aside className="icon-rail" aria-label="ניווט">
         <div className="rail-logo">
           <Image src="/wecom-logo.svg" alt="wecom" width={92} height={42} priority />
         </div>
-        <button title="לוח משמרות" className="rail-button active">
+        <button
+          title="לוח משמרות"
+          className={`rail-button ${activeSection === "schedule" ? "active" : ""}`}
+          onClick={() => navigateTo("schedule", "schedule-section")}
+        >
           <CalendarDays size={20} />
         </button>
-        <button title="עובדים" className="rail-button">
+        <button
+          title="עובדים"
+          className={`rail-button ${activeSection === "employees" ? "active" : ""}`}
+          onClick={() => navigateTo("employees", "employees-section")}
+        >
           <UsersRound size={20} />
         </button>
-        <button title="התראות" className="rail-button">
+        <button
+          title="התראות"
+          className={`rail-button ${activeSection === "notifications" ? "active" : ""}`}
+          onClick={showNotifications}
+        >
           <Bell size={20} />
         </button>
-        <button title="החלפות" className="rail-button">
+        <button
+          title="החלפות"
+          className={`rail-button ${activeSection === "swaps" ? "active" : ""}`}
+          onClick={() => navigateTo("swaps", "swaps-section")}
+        >
           <Repeat2 size={20} />
         </button>
       </aside>
@@ -286,7 +350,17 @@ export function ScheduleDashboard({
           </div>
           <div className="search-box">
             <Search size={18} />
-            <input placeholder="חיפוש עובד, משמרת או תאריך" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="חיפוש עובד"
+              aria-label="חיפוש עובד"
+            />
+            {searchQuery ? (
+              <button className="search-clear" onClick={() => setSearchQuery("")} title="נקה חיפוש">
+                <X size={15} />
+              </button>
+            ) : null}
           </div>
           <div className="topbar-actions">
             <span className="trial-pill">ניהול משמרות</span>
@@ -301,7 +375,7 @@ export function ScheduleDashboard({
         </header>
 
         <main className="scheduler-page">
-          <section className="schedule-toolbar">
+          <section className="schedule-toolbar" id="schedule-section">
             <div>
               <p className="eyebrow">Wecomconnect</p>
               <h1>לוח משמרות שבועי</h1>
@@ -330,7 +404,7 @@ export function ScheduleDashboard({
                   disabled={currentUser.role !== "MANAGER"}
                   onChange={(event) => setSelectedEmployeeId(event.target.value)}
                 >
-                  {availabilityEmployees.map((employee) => (
+                  {selectableEmployees.map((employee) => (
                     <option value={employee.id} key={employee.id}>
                       {employee.name}
                     </option>
@@ -380,20 +454,25 @@ export function ScheduleDashboard({
                     );
                     return (
                       <div className="shift-cell" key={key}>
-                        <button
-                          className={`add-shift ${selectedEmployeeBlocked ? "has-constraint" : ""} ${selectedEmployeePreferred ? "is-preferred" : ""}`}
-                          onClick={() => assignShift(day.index, shiftType)}
-                          disabled={currentUser.role !== "MANAGER"}
-                        >
-                          {selectedEmployeeBlocked ? <ShieldAlert size={16} /> : <Plus size={16} />}
-                          {selectedEmployeeBlocked
-                            ? "שיבוץ בחריגה"
-                            : selectedEmployeePreferred
-                              ? "שיבוץ מועדף"
-                              : "שיבוץ"}
-                        </button>
+                        {currentUser.role === "MANAGER" ? (
+                          <button
+                            className={`add-shift ${selectedEmployeeBlocked ? "has-constraint" : ""} ${selectedEmployeePreferred ? "is-preferred" : ""}`}
+                            onClick={() => assignShift(day.index, shiftType)}
+                          >
+                            {selectedEmployeeBlocked ? <ShieldAlert size={16} /> : <Plus size={16} />}
+                            {selectedEmployeeBlocked
+                              ? "שיבוץ בחריגה"
+                              : selectedEmployeePreferred
+                                ? "שיבוץ מועדף"
+                                : "שיבוץ"}
+                          </button>
+                        ) : (
+                          <div className="employee-shift-state">שיבוץ מנהלת</div>
+                        )}
                         <div className="assigned-list">
-                          {assignments.map((assignment) => {
+                          {assignments
+                            .filter((assignment) => matchingEmployeeIds.has(assignment.employeeId))
+                            .map((assignment) => {
                             const employee = employeesById.get(assignment.employeeId);
                             return (
                             <div
@@ -437,13 +516,15 @@ export function ScheduleDashboard({
             </div>
 
             <aside className="side-panel">
-              <section className="summary-block">
+              <section className="summary-block" id="employees-section">
                 <div className="panel-title">
                   <UsersRound size={18} />
                   <h2>סיכום עובדים</h2>
                 </div>
                 <div className="summary-list">
-                  {schedule.summaries.map((summary) => {
+                  {schedule.summaries
+                    .filter((summary) => matchingEmployeeIds.has(summary.employeeId))
+                    .map((summary) => {
                     const employee = employeesById.get(summary.employeeId);
                     return (
                       <div
@@ -464,10 +545,11 @@ export function ScheduleDashboard({
                       </div>
                     );
                   })}
+                  {matchingEmployeeIds.size === 0 ? <p className="empty-state">לא נמצאו עובדים.</p> : null}
                 </div>
               </section>
 
-              <section className="summary-block">
+              <section className="summary-block" id="swaps-section">
                 <div className="panel-title">
                   <Repeat2 size={18} />
                   <h2>החלפות</h2>
@@ -477,7 +559,7 @@ export function ScheduleDashboard({
                     <option value="" disabled>
                       משמרת מקור
                     </option>
-                    {schedule.assignments.map((assignment) => (
+                    {swapSourceAssignments.map((assignment) => (
                       <option value={assignment.id} key={assignment.id}>
                         {employeesById.get(assignment.employeeId)?.name} · יום {assignment.dayIndex + 1} ·{" "}
                         {SHIFT_DEFINITIONS[assignment.shiftType].label}
@@ -494,7 +576,9 @@ export function ScheduleDashboard({
                       </option>
                     ))}
                   </select>
-                  <button className="primary-button">שלח החלפה</button>
+                  <button className="primary-button" disabled={swapSourceAssignments.length === 0}>
+                    {swapSourceAssignments.length === 0 ? "אין משמרת להחלפה" : "שלח החלפה"}
+                  </button>
                 </form>
                 <div className="swap-list">
                   {schedule.swaps.map((swap) => (
@@ -529,7 +613,7 @@ export function ScheduleDashboard({
             </aside>
           </section>
 
-          <section className="availability-panel">
+          <section className="availability-panel" id="availability-section">
             <div className="availability-heading">
               <div className="panel-title">
                 <ShieldAlert size={18} />

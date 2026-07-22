@@ -262,6 +262,17 @@ select {
   outline: none;
 }
 
+.search-clear {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
 .topbar-actions,
 .toolbar-controls,
 .bottom-summary,
@@ -355,6 +366,13 @@ select {
   gap: 18px;
   padding: 18px 20px;
   margin-bottom: 18px;
+}
+
+#schedule-section,
+#employees-section,
+#swaps-section,
+#availability-section {
+  scroll-margin-top: 18px;
 }
 
 .eyebrow {
@@ -483,6 +501,18 @@ select {
   color: #3b7a35;
 }
 
+.employee-shift-state {
+  min-height: 34px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .assigned-list {
   display: grid;
   gap: 8px;
@@ -566,6 +596,13 @@ select {
 
 .compact-form {
   margin-top: 14px;
+}
+
+.empty-state {
+  color: var(--muted);
+  margin: 0;
+  padding: 18px 0;
+  text-align: center;
 }
 
 .availability-panel {

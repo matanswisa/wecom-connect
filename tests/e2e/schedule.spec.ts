@@ -1,22 +1,32 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function login(page: Page, email: string) {
+async function login(page: Page, email: string, password = "Password123!") {
   await page.goto("/login");
-  await page.getByLabel("אימייל").fill(email);
-  await page.getByLabel("סיסמה").fill("Password123!");
+  await page.getByLabel("אימייל או שם משתמש").fill(email);
+  await page.getByLabel("סיסמה").fill(password);
   await page.getByRole("button", { name: "כניסה" }).click();
   await page.waitForURL("/");
 }
 
 test("manager sees a complete week and every employee constraint", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await login(page, "manager@wecomconnect.local");
+  await login(page, "admin", "Wecom123");
 
   await expect(page.getByRole("heading", { name: "לוח משמרות שבועי" })).toBeVisible();
   await expect(page.locator(".day-header").filter({ hasText: "שישי" })).toBeVisible();
   await expect(page.locator(".day-header").filter({ hasText: "שבת" })).toBeVisible();
-  await expect(page.locator(".availability-row")).toHaveCount(5);
+  await expect(page.locator(".availability-row")).toHaveCount(6);
   await expect(page.getByText("מעוניין לעבוד", { exact: true })).toBeVisible();
+
+  await page.getByTitle("התראות").click();
+  await expect(page.getByText("אין התראות חדשות.")).toBeVisible();
+  await page.getByTitle("עובדים").click();
+  await expect(page.getByTitle("עובדים")).toHaveClass(/active/);
+  await page.getByLabel("חיפוש עובד").fill("עובד בדיקה");
+  await expect(page.locator(".summary-item")).toHaveCount(1);
+  await page.getByTitle("נקה חיפוש").click();
+  await page.getByTitle("החלפות").click();
+  await expect(page.getByTitle("החלפות")).toHaveClass(/active/);
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "ייצוא טבלה" }).click();
   const download = await downloadPromise;
@@ -38,12 +48,14 @@ test("manager sees a complete week and every employee constraint", async ({ page
   }
 });
 
-test("employee can update only their own weekly availability", async ({ page }) => {
+test("regular employee can use their availability controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await login(page, "noa@wecomconnect.local");
+  await login(page, "employee", "Wecom123");
 
-  const ownRow = page.locator(".availability-row").filter({ hasText: "נועה כהן" });
+  const ownRow = page.locator(".availability-row").filter({ hasText: "עובד בדיקה" });
   await expect(page.locator(".employee-select-control option")).toHaveCount(1);
+  await expect(page.locator(".add-shift")).toHaveCount(0);
+  await expect(page.locator(".employee-shift-state")).toHaveCount(21);
   const ownSelect = ownRow.locator("select").first();
   await expect(ownSelect).toBeEnabled();
   await ownSelect.selectOption("PREFERRED");

@@ -27,7 +27,8 @@ await client.query(
    VALUES
     ('manager@wecomconnect.local', 'מנהל מערכת', $1, 'MANAGER'),
     ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE'),
-    ('admin@wecomconnect.local', 'מנהל ראשי', $2, 'MANAGER')
+    ('admin@wecomconnect.local', 'מנהל ראשי', $2, 'MANAGER'),
+    ('employee@wecomconnect.local', 'עובד בדיקה', $2, 'EMPLOYEE')
    ON CONFLICT (email) DO UPDATE SET
     name = EXCLUDED.name,
     password_hash = EXCLUDED.password_hash,
@@ -37,8 +38,13 @@ await client.query(
 
 await client.query(
   `INSERT INTO employees (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
-   SELECT id, name, email, 'עובד/ת משמרת', 1, 6 FROM users WHERE email = 'noa@wecomconnect.local'
-   ON CONFLICT (email) DO UPDATE SET user_id = EXCLUDED.user_id`
+   SELECT id, name, email, 'עובד/ת משמרת', 1, 6
+   FROM users
+   WHERE email IN ('noa@wecomconnect.local', 'employee@wecomconnect.local')
+   ON CONFLICT (email) DO UPDATE SET
+    user_id = EXCLUDED.user_id,
+    name = EXCLUDED.name,
+    weekly_max_shifts = 6`
 );
 
 await client.query(

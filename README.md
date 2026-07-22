@@ -38,7 +38,8 @@ The `app` service waits for PostgreSQL, runs the schema migration, seeds demo us
 
 The seed creates:
 
-- Admin: `admin@wecomconnect.local` / `Wecom123`
+- Admin: `admin` or `admin@wecomconnect.local` / `Wecom123`
+- Regular employee: `employee` or `employee@wecomconnect.local` / `Wecom123`
 - Manager: `manager@wecomconnect.local` / `Password123!`
 - Employee: `noa@wecomconnect.local` / `Password123!`
 
