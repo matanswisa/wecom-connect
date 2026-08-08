@@ -2,6 +2,7 @@
 .env.local
 .next
 coverage
+data/*.db*
 node_modules
 dist
 *.log

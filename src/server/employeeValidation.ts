@@ -24,12 +24,16 @@ export function parseEmployeeInput(body: Record<string, unknown>) {
 }
 
 export function handleEmployeeWriteError(error: unknown) {
-  if (isPostgresError(error) && error.code === "23505") {
+  if (
+    isDatabaseError(error) &&
+    (error.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+      error.code === "SQLITE_CONSTRAINT_PRIMARYKEY")
+  ) {
     return jsonError("כבר קיים משתמש עם כתובת האימייל הזו.", 409);
   }
   return jsonError("לא ניתן לשמור את המשתמש.", 500);
 }
 
-function isPostgresError(error: unknown): error is { code: string } {
+function isDatabaseError(error: unknown): error is { code: string } {
   return typeof error === "object" && error !== null && "code" in error;
 }

@@ -1,4 +1,4 @@
-import { getPool, query } from "./db";
+import { execute, query, transaction } from "./db";
 import type {
   AvailabilityBlock,
   AvailabilityStatus,
@@ -26,7 +26,7 @@ interface EmployeeRow {
   role_title: string;
   weekly_min_shifts: number;
   weekly_max_shifts: number;
-  is_active: boolean;
+  is_active: boolean | number;
 }
 
 interface AvailabilityRow {
@@ -105,17 +105,15 @@ export async function createManagedEmployee(input: {
   weeklyMaxShifts: number;
   passwordHash: string;
 }) {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const userResult = await client.query<UserRow>(
+  return transaction(() => {
+    const userResult = execute<UserRow>(
       `INSERT INTO users (email, name, password_hash, role)
        VALUES ($1, $2, $3, 'EMPLOYEE')
        RETURNING *`,
       [input.email, input.name, input.passwordHash]
     );
     const user = userResult.rows[0];
-    const employeeResult = await client.query<EmployeeRow>(
+    const employeeResult = execute<EmployeeRow>(
       `INSERT INTO employees
         (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -129,14 +127,8 @@ export async function createManagedEmployee(input: {
         input.weeklyMaxShifts
       ]
     );
-    await client.query("COMMIT");
     return toEmployee(employeeResult.rows[0]);
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export async function updateManagedEmployee(input: {
@@ -148,10 +140,8 @@ export async function updateManagedEmployee(input: {
   weeklyMaxShifts: number;
   passwordHash: string | null;
 }) {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const employeeResult = await client.query<EmployeeRow>(
+  return transaction(() => {
+    const employeeResult = execute<EmployeeRow>(
       `UPDATE employees
        SET name = $2,
            email = $3,
@@ -171,12 +161,11 @@ export async function updateManagedEmployee(input: {
     );
     const employee = employeeResult.rows[0];
     if (!employee) {
-      await client.query("ROLLBACK");
       return null;
     }
 
     if (employee.user_id) {
-      await client.query(
+      execute(
         `UPDATE users
          SET name = $2,
              email = $3,
@@ -185,55 +174,40 @@ export async function updateManagedEmployee(input: {
         [employee.user_id, input.name, input.email, input.passwordHash]
       );
     } else if (input.passwordHash) {
-      const userResult = await client.query<UserRow>(
+      const userResult = execute<UserRow>(
         `INSERT INTO users (email, name, password_hash, role)
          VALUES ($1, $2, $3, 'EMPLOYEE')
          RETURNING *`,
         [input.email, input.name, input.passwordHash]
       );
-      await client.query(
+      execute(
         "UPDATE employees SET user_id = $2 WHERE id = $1",
         [employee.id, userResult.rows[0].id]
       );
     }
-    const finalEmployeeResult = await client.query<EmployeeRow>(
+    const finalEmployeeResult = execute<EmployeeRow>(
       "SELECT * FROM employees WHERE id = $1",
       [employee.id]
     );
-    await client.query("COMMIT");
     return toEmployee(finalEmployeeResult.rows[0]);
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export async function deleteManagedEmployee(id: string) {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const employeeResult = await client.query<EmployeeRow>(
+  return transaction(() => {
+    const employeeResult = execute<EmployeeRow>(
       "DELETE FROM employees WHERE id = $1 RETURNING *",
       [id]
     );
     const employee = employeeResult.rows[0];
     if (!employee) {
-      await client.query("ROLLBACK");
       return false;
     }
     if (employee.user_id) {
-      await client.query("DELETE FROM users WHERE id = $1", [employee.user_id]);
+      execute("DELETE FROM users WHERE id = $1", [employee.user_id]);
     }
-    await client.query("COMMIT");
     return true;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export async function listAssignments(weekStart: string) {
@@ -373,7 +347,7 @@ function toEmployee(row: EmployeeRow): Employee {
     roleTitle: row.role_title,
     weeklyMinShifts: row.weekly_min_shifts,
     weeklyMaxShifts: row.weekly_max_shifts,
-    isActive: row.is_active
+    isActive: Boolean(row.is_active)
   };
 }
 

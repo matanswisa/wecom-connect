@@ -1,13 +1,17 @@
 import { randomBytes, scrypt } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import process from "node:process";
-import pg from "pg";
+import Database from "better-sqlite3";
 
 const scryptAsync = promisify(scrypt);
-const databaseUrl = process.env.DATABASE_URL;
+const configuredPath = process.env.SQLITE_PATH?.trim() || "./data/wecomconnect.db";
+const databasePath =
+  configuredPath === ":memory:" ? configuredPath : resolve(process.cwd(), configuredPath);
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
+if (databasePath !== ":memory:") {
+  mkdirSync(dirname(databasePath), { recursive: true });
 }
 
 async function hashPassword(password) {
@@ -16,46 +20,52 @@ async function hashPassword(password) {
   return `scrypt:${salt}:${derivedKey.toString("hex")}`;
 }
 
-const client = new pg.Client({ connectionString: databaseUrl });
-await client.connect();
+const database = new Database(databasePath);
+database.pragma("foreign_keys = ON");
+database.pragma("journal_mode = WAL");
+database.pragma("busy_timeout = 5000");
 
 const demoPasswordHash = await hashPassword("Password123!");
 const adminPasswordHash = await hashPassword("Wecom123");
 
-await client.query(
-  `INSERT INTO users (email, name, password_hash, role)
-   VALUES
-    ('manager@wecomconnect.local', 'מנהל מערכת', $1, 'MANAGER'),
-    ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE'),
-    ('admin@wecomconnect.local', 'מנהל ראשי', $2, 'MANAGER'),
-    ('employee@wecomconnect.local', 'עובד בדיקה', $2, 'EMPLOYEE')
-   ON CONFLICT (email) DO UPDATE SET
-    name = EXCLUDED.name,
-    password_hash = EXCLUDED.password_hash,
-    role = EXCLUDED.role`,
-  [demoPasswordHash, adminPasswordHash]
-);
+const seed = database.transaction(() => {
+  const upsertUser = database.prepare(
+    `INSERT INTO users (email, name, password_hash, role)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (email) DO UPDATE SET
+      name = excluded.name,
+      password_hash = excluded.password_hash,
+      role = excluded.role`
+  );
 
-await client.query(
-  `INSERT INTO employees (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
-   SELECT id, name, email, 'עובד/ת משמרת', 1, 6
-   FROM users
-   WHERE email IN ('noa@wecomconnect.local', 'employee@wecomconnect.local')
-   ON CONFLICT (email) DO UPDATE SET
-    user_id = EXCLUDED.user_id,
-    name = EXCLUDED.name,
-    weekly_max_shifts = 6`
-);
+  upsertUser.run("manager@wecomconnect.local", "מנהל מערכת", demoPasswordHash, "MANAGER");
+  upsertUser.run("noa@wecomconnect.local", "נועה כהן", demoPasswordHash, "EMPLOYEE");
+  upsertUser.run("admin@wecomconnect.local", "מנהל ראשי", adminPasswordHash, "MANAGER");
+  upsertUser.run("employee@wecomconnect.local", "עובד בדיקה", adminPasswordHash, "EMPLOYEE");
 
-await client.query(
-  `INSERT INTO employees (name, email, role_title, weekly_min_shifts, weekly_max_shifts)
-   VALUES
-    ('דניאל לוי', 'daniel@wecomconnect.local', 'אחראי משמרת', 2, 6),
-    ('מאיה אברהם', 'maya@wecomconnect.local', 'עובדת משמרת', 1, 6),
-    ('איתי ברק', 'itai@wecomconnect.local', 'עובד משמרת', 1, 6),
-    ('שירה מזרחי', 'shira@wecomconnect.local', 'עובדת משמרת', 1, 6)
-   ON CONFLICT (email) DO UPDATE SET weekly_max_shifts = 6`
-);
+  database.prepare(
+    `INSERT INTO employees (user_id, name, email, role_title, weekly_min_shifts, weekly_max_shifts)
+     SELECT id, name, email, 'עובד/ת משמרת', 1, 6
+     FROM users
+     WHERE email IN ('noa@wecomconnect.local', 'employee@wecomconnect.local')
+     ON CONFLICT (email) DO UPDATE SET
+      user_id = excluded.user_id,
+      name = excluded.name,
+      weekly_max_shifts = 6`
+  ).run();
 
-await client.end();
-console.log("Seed data is ready.");
+  const upsertEmployee = database.prepare(
+    `INSERT INTO employees (name, email, role_title, weekly_min_shifts, weekly_max_shifts)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (email) DO UPDATE SET weekly_max_shifts = 6`
+  );
+
+  upsertEmployee.run("דניאל לוי", "daniel@wecomconnect.local", "אחראי משמרת", 2, 6);
+  upsertEmployee.run("מאיה אברהם", "maya@wecomconnect.local", "עובדת משמרת", 1, 6);
+  upsertEmployee.run("איתי ברק", "itai@wecomconnect.local", "עובד משמרת", 1, 6);
+  upsertEmployee.run("שירה מזרחי", "shira@wecomconnect.local", "עובדת משמרת", 1, 6);
+});
+
+seed();
+database.close();
+console.log(`Seed data is ready at ${databasePath}.`);

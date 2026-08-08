@@ -12,7 +12,7 @@ The app focuses on a comfortable weekly scheduling workflow, employee availabili
 
 - Next.js + React + TypeScript
 - Node route handlers
-- PostgreSQL
+- SQLite (`better-sqlite3`)
 - Vitest
 - Playwright
 
@@ -20,12 +20,15 @@ The app focuses on a comfortable weekly scheduling workflow, employee availabili
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
 npm install
 npm run db:migrate
 npm run db:seed
 npm run dev
 ```
+
+The default database file is `data/wecomconnect.db`. Set `SQLITE_PATH` to use a
+different local path. The database directory and SQLite sidecar files are ignored
+by Git.
 
 ## Docker Setup
 
@@ -34,7 +37,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The `app` service waits for PostgreSQL, runs the schema migration, seeds demo users, and starts Next.js on `http://localhost:3000`.
+The `app` service runs the SQLite schema migration, seeds demo users, and starts
+Next.js on `http://localhost:3000`. The named `sqlite-data` volume preserves the
+database when the container is recreated.
 
 The seed creates:
 
@@ -42,6 +47,16 @@ The seed creates:
 - Regular employee: `employee` or `employee@wecomconnect.local` / `Wecom123`
 - Manager: `manager@wecomconnect.local` / `Password123!`
 - Employee: `noa@wecomconnect.local` / `Password123!`
+
+Change or remove the demo credentials before exposing the app publicly. Running
+`npm run db:seed` resets those demo account passwords.
+
+## Deployment note
+
+This configuration requires a persistent local filesystem. It works for local
+development, Docker, and a single server with a persistent disk. It is not
+suitable for Netlify Functions because their local filesystem is ephemeral and
+is not shared across function instances.
 
 ## Scheduling Rules
 

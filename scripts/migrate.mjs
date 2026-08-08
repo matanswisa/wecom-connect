@@ -1,18 +1,23 @@
-import { readFile } from "node:fs/promises";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import process from "node:process";
-import pg from "pg";
+import Database from "better-sqlite3";
 
-const databaseUrl = process.env.DATABASE_URL;
+const configuredPath = process.env.SQLITE_PATH?.trim() || "./data/wecomconnect.db";
+const databasePath =
+  configuredPath === ":memory:" ? configuredPath : resolve(process.cwd(), configuredPath);
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
+if (databasePath !== ":memory:") {
+  mkdirSync(dirname(databasePath), { recursive: true });
 }
 
-const sql = await readFile(new URL("../db/schema.sql", import.meta.url), "utf8");
-const client = new pg.Client({ connectionString: databaseUrl });
+const sql = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
+const database = new Database(databasePath);
 
-await client.connect();
-await client.query(sql);
-await client.end();
+database.pragma("foreign_keys = ON");
+database.pragma("journal_mode = WAL");
+database.pragma("busy_timeout = 5000");
+database.exec(sql);
+database.close();
 
-console.log("Database schema is up to date.");
+console.log(`SQLite schema is up to date at ${databasePath}.`);
