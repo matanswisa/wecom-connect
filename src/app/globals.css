@@ -38,7 +38,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif;
+  font-family: var(--font-heebo), Arial, sans-serif;
   font-size: 14px;
 }
 
