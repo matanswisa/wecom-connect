@@ -2047,9 +2047,12 @@ html[data-theme="dark"] {
   background: #172638;
 }
 
-[data-theme="dark"] .employee-chip,
 [data-theme="dark"] .availability-employee {
   background: #1b222d;
+}
+
+[data-theme="dark"] .employee-chip {
+  background: color-mix(in srgb, var(--employee-color) 18%, #1b222d);
 }
 
 [data-theme="dark"] .employee-chip button {

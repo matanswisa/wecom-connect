@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calculateSummaries, getRestWarnings, validateAssignment } from "./shifts";
+import {
+  SHIFT_DEFINITIONS,
+  calculateSummaries,
+  getRestWarnings,
+  validateAssignment
+} from "./shifts";
 import type { AvailabilityBlock, Employee, ShiftAssignment } from "./types";
 
 const employee: Employee = {
@@ -25,6 +30,12 @@ function assignment(id: string, dayIndex: number, shiftType: ShiftAssignment["sh
 }
 
 describe("shift rules", () => {
+  it("uses green, yellow, and red assignment colors by shift", () => {
+    expect(SHIFT_DEFINITIONS.MORNING.color.solid).toBe("#4d8149");
+    expect(SHIFT_DEFINITIONS.EVENING.color.solid).toBe("#a57806");
+    expect(SHIFT_DEFINITIONS.NIGHT.color.solid).toBe("#b91820");
+  });
+
   it("blocks assignments above the weekly maximum", () => {
     const existing = [
       assignment("1", 0, "MORNING"),

@@ -11,28 +11,38 @@ import type {
 
 export const SHIFT_DEFINITIONS: Record<
   ShiftType,
-  { label: string; startsAt: string; endsAt: string; hours: number; tone: string }
+  {
+    label: string;
+    startsAt: string;
+    endsAt: string;
+    hours: number;
+    tone: string;
+    color: { solid: string; soft: string };
+  }
 > = {
   MORNING: {
     label: "בוקר",
     startsAt: "07:00",
     endsAt: "15:00",
     hours: 8,
-    tone: "morning"
+    tone: "morning",
+    color: { solid: "#4d8149", soft: "#eff7ed" }
   },
   EVENING: {
     label: "ערב",
     startsAt: "15:00",
     endsAt: "23:00",
     hours: 8,
-    tone: "evening"
+    tone: "evening",
+    color: { solid: "#a57806", soft: "#fff8e5" }
   },
   NIGHT: {
     label: "לילה",
     startsAt: "23:00",
     endsAt: "07:00",
     hours: 8,
-    tone: "night"
+    tone: "night",
+    color: { solid: "#b91820", soft: "#fff1f2" }
   }
 };
 

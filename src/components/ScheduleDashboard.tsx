@@ -697,7 +697,7 @@ export function ScheduleDashboard({
                             <div
                               className="employee-chip"
                               key={assignment.id}
-                              style={employeeColorStyle(employee)}
+                              style={shiftColorStyle(assignment.shiftType)}
                             >
                               <span>
                                 <i className="employee-color-dot" aria-hidden="true" />
@@ -1162,6 +1162,14 @@ function cellKey(dayIndex: number, shiftType: ShiftType) {
 
 function employeeColorStyle(employee: Employee | undefined): CSSProperties {
   const color = getEmployeeColor(employee?.userId ?? employee?.id ?? "unassigned");
+  return {
+    "--employee-color": color.solid,
+    "--employee-soft": color.soft
+  } as CSSProperties;
+}
+
+function shiftColorStyle(shiftType: ShiftType): CSSProperties {
+  const color = SHIFT_DEFINITIONS[shiftType].color;
   return {
     "--employee-color": color.solid,
     "--employee-soft": color.soft
