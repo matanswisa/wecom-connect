@@ -146,13 +146,6 @@ export function ScheduleDashboard({
     () => schedule.employees.find((employee) => employee.userId === currentUser.id),
     [currentUser.id, schedule.employees]
   );
-  const selectableEmployees = useMemo(
-    () =>
-      currentUser.role === "MANAGER"
-        ? schedule.employees
-        : schedule.employees.filter((employee) => employee.userId === currentUser.id),
-    [currentUser.id, currentUser.role, schedule.employees]
-  );
   const matchingEmployeeIds = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("he");
     return new Set(
@@ -164,21 +157,13 @@ export function ScheduleDashboard({
         .map((employee) => employee.id)
     );
   }, [schedule.employees, searchQuery]);
-  const availabilityCandidates = useMemo(
-    () => currentUser.role === "MANAGER" ? schedule.employees : selectableEmployees,
-    [currentUser.role, schedule.employees, selectableEmployees]
-  );
-  const availabilityVisibleIds = useMemo(
-    () =>
-      currentUser.role === "MANAGER"
-        ? matchingEmployeeIds
-        : new Set(selectableEmployees.map((employee) => employee.id)),
-    [currentUser.role, matchingEmployeeIds, selectableEmployees]
-  );
+  const availabilityPageSize = currentUser.role === "MANAGER"
+    ? AVAILABILITY_PAGE_SIZE
+    : Math.max(schedule.employees.length, 1);
   const availabilityView = useAvailabilityView({
-    employees: availabilityCandidates,
-    visibleEmployeeIds: availabilityVisibleIds,
-    pageSize: AVAILABILITY_PAGE_SIZE,
+    employees: schedule.employees,
+    visibleEmployeeIds: matchingEmployeeIds,
+    pageSize: availabilityPageSize,
     resetKey: `${initialAvailabilityWeekStart}:${searchQuery}`
   });
   const openAvailabilityFilter = useCallback(() => setIsAvailabilityFilterOpen(true), []);
@@ -189,6 +174,25 @@ export function ScheduleDashboard({
         ? schedule.assignments
         : schedule.assignments.filter((assignment) => assignment.employeeId === ownEmployee?.id),
     [currentUser.role, ownEmployee?.id, schedule.assignments]
+  );
+  const unavailableEmployeesByCell = useMemo(
+    () => groupUnavailableEmployees(
+      schedule.employees.filter((employee) => matchingEmployeeIds.has(employee.id)),
+      schedule.scheduleAvailabilityBlocks
+    ),
+    [matchingEmployeeIds, schedule.employees, schedule.scheduleAvailabilityBlocks]
+  );
+  const activeSwaps = useMemo(
+    () => schedule.swaps.filter(
+      (swap) => swap.status === "PENDING_EMPLOYEE" || swap.status === "PENDING_MANAGER"
+    ),
+    [schedule.swaps]
+  );
+  const swapHistory = useMemo(
+    () => schedule.swaps.filter(
+      (swap) => swap.status !== "PENDING_EMPLOYEE" && swap.status !== "PENDING_MANAGER"
+    ),
+    [schedule.swaps]
   );
 
   const loadSchedule = useCallback(async (nextWeekStart = weekStart) => {
@@ -623,6 +627,7 @@ export function ScheduleDashboard({
                   {days.map((day) => {
                     const key = cellKey(day.index, shiftType);
                     const assignments = assignmentsByCell.get(key) ?? [];
+                    const unavailableEmployees = unavailableEmployeesByCell.get(key) ?? [];
                     return (
                       <div className="shift-cell" key={key}>
                         {currentUser.role === "MANAGER" ? (
@@ -665,6 +670,24 @@ export function ScheduleDashboard({
                         ) : (
                           <div className="employee-shift-state" data-pdf-hide="true">שיבוץ מנהלת</div>
                         )}
+                        {unavailableEmployees.length > 0 ? (
+                          <div
+                            className="cell-unavailable"
+                            aria-label={`לא זמינים: ${unavailableEmployees
+                              .map((employee) => employee.name)
+                              .join(", ")}`}
+                          >
+                            <strong><ShieldAlert size={13} /> לא זמינים</strong>
+                            <div className="cell-unavailable-names">
+                              {unavailableEmployees.map((employee) => (
+                                <span key={employee.id} style={employeeColorStyle(employee)}>
+                                  <i className="employee-color-dot" aria-hidden="true" />
+                                  {employee.name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="assigned-list">
                           {assignments
                             .filter((assignment) => matchingEmployeeIds.has(assignment.employeeId))
@@ -812,35 +835,22 @@ export function ScheduleDashboard({
                     {swapSourceAssignments.length === 0 ? "אין משמרת להחלפה" : "שלח החלפה"}
                   </button>
                 </form>
-                <div className="swap-list">
-                  {schedule.swaps.map((swap) => (
-                    <div className="swap-item" key={swap.id}>
-                      <span>{swapStatusLabel(swap.status)}</span>
-                      <div className="swap-actions">
-                        {swap.status === "PENDING_EMPLOYEE" ? (
-                          <>
-                            <button onClick={() => decideSwap(swap.id, "approve_employee")}>
-                              <Check size={14} />
-                            </button>
-                            <button onClick={() => decideSwap(swap.id, "decline_employee")}>
-                              <X size={14} />
-                            </button>
-                          </>
-                        ) : null}
-                        {swap.status === "PENDING_MANAGER" && currentUser.role === "MANAGER" ? (
-                          <>
-                            <button onClick={() => decideSwap(swap.id, "approve_manager")}>
-                              <Check size={14} />
-                            </button>
-                            <button onClick={() => decideSwap(swap.id, "decline_manager")}>
-                              <X size={14} />
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="swap-section-title">בקשות פעילות</h3>
+                <SwapRequestList
+                  swaps={activeSwaps}
+                  ownEmployeeId={ownEmployee?.id}
+                  isManager={currentUser.role === "MANAGER"}
+                  onDecision={decideSwap}
+                  emptyLabel="אין בקשות פעילות."
+                />
+                <h3 className="swap-section-title">היסטוריית החלפות</h3>
+                <SwapRequestList
+                  swaps={swapHistory}
+                  ownEmployeeId={ownEmployee?.id}
+                  isManager={currentUser.role === "MANAGER"}
+                  onDecision={decideSwap}
+                  emptyLabel="עדיין אין החלפות שהסתיימו."
+                />
               </section>
             </aside>
           </section>
@@ -849,13 +859,13 @@ export function ScheduleDashboard({
             currentUser={currentUser}
             weekStart={initialAvailabilityWeekStart}
             days={availabilityDays}
-            employees={availabilityCandidates}
+            employees={schedule.employees}
             visibleEmployees={availabilityView.visibleEmployees}
             selectedEmployeeIds={availabilityView.selection}
             selectedEmployeeCount={availabilityView.selectedEmployees.length}
             page={availabilityView.page}
             pageCount={availabilityView.pageCount}
-            pageSize={AVAILABILITY_PAGE_SIZE}
+            pageSize={availabilityPageSize}
             availabilityBlocks={schedule.availabilityBlocks}
             isFilterOpen={isAvailabilityFilterOpen}
             onOpenFilter={openAvailabilityFilter}
@@ -992,6 +1002,97 @@ export function ScheduleDashboard({
   );
 }
 
+function SwapRequestList({
+  swaps,
+  ownEmployeeId,
+  isManager,
+  onDecision,
+  emptyLabel
+}: {
+  swaps: ShiftSwapRequest[];
+  ownEmployeeId?: string;
+  isManager: boolean;
+  onDecision: (id: string, action: string) => Promise<void>;
+  emptyLabel: string;
+}) {
+  if (swaps.length === 0) {
+    return <p className="swap-empty">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="swap-list">
+      {swaps.map((swap) => {
+        const employeeCanDecide =
+          swap.status === "PENDING_EMPLOYEE" && swap.targetEmployeeId === ownEmployeeId;
+        const managerCanDecide = swap.status === "PENDING_MANAGER" && isManager;
+        return (
+          <article className="swap-item" key={swap.id}>
+            <div className="swap-copy">
+              <strong className="swap-route">
+                {swap.requesterEmployeeName ?? "עובד"}
+                <Repeat2 size={14} aria-hidden="true" />
+                {swap.targetEmployeeName ?? "עובד יעד"}
+              </strong>
+              <span>{swapShiftLabel(swap)}</span>
+              <small className="swap-created">נשלחה {formatSwapCreatedAt(swap.createdAt)}</small>
+            </div>
+            <div className="swap-meta">
+              <span className={`swap-status ${swap.status.toLocaleLowerCase()}`}>
+                {swapStatusLabel(swap.status)}
+              </span>
+              {employeeCanDecide || managerCanDecide ? (
+                <div className="swap-actions">
+                  <button
+                    type="button"
+                    title="אישור החלפה"
+                    aria-label="אישור החלפה"
+                    onClick={() => onDecision(
+                      swap.id,
+                      employeeCanDecide ? "approve_employee" : "approve_manager"
+                    )}
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="decline"
+                    title="דחיית החלפה"
+                    aria-label="דחיית החלפה"
+                    onClick={() => onDecision(
+                      swap.id,
+                      employeeCanDecide ? "decline_employee" : "decline_manager"
+                    )}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function groupUnavailableEmployees(
+  employees: Employee[],
+  availabilityBlocks: AvailabilityBlock[]
+) {
+  const groups = new Map<string, Employee[]>();
+  for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+    for (const shiftType of getShiftTypes()) {
+      const unavailableEmployees = employees.filter((employee) =>
+        isUnavailableForShift(availabilityBlocks, employee.id, dayIndex, shiftType)
+      );
+      if (unavailableEmployees.length > 0) {
+        groups.set(cellKey(dayIndex, shiftType), unavailableEmployees);
+      }
+    }
+  }
+  return groups;
+}
+
 function groupAssignments(assignments: ShiftAssignment[]) {
   const groups = new Map<string, ShiftAssignment[]>();
   for (const assignment of assignments) {
@@ -1076,4 +1177,29 @@ function swapStatusLabel(status: ShiftSwapRequest["status"]) {
     APPROVED: "אושר"
   };
   return labels[status];
+}
+
+function swapShiftLabel(swap: ShiftSwapRequest) {
+  if (swap.weekStart === undefined || swap.dayIndex === undefined || !swap.shiftType) {
+    return "פרטי המשמרת אינם זמינים";
+  }
+  const source = `${formatHebrewDate(addDays(swap.weekStart, swap.dayIndex))} · ${
+    SHIFT_DEFINITIONS[swap.shiftType].label
+  }`;
+  if (swap.targetDayIndex === null || swap.targetDayIndex === undefined || !swap.targetShiftType) {
+    return source;
+  }
+  return `${source} תמורת ${formatHebrewDate(addDays(swap.weekStart, swap.targetDayIndex))} · ${
+    SHIFT_DEFINITIONS[swap.targetShiftType].label
+  }`;
+}
+
+function formatSwapCreatedAt(createdAt: string) {
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(createdAt));
 }

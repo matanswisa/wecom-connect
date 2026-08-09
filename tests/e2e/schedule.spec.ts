@@ -221,7 +221,9 @@ test("regular employee can use their availability controls", async ({ page }) =>
   await expect(ownSelect).toHaveValue("PREFERRED");
 
   const otherRow = page.locator(".availability-row").filter({ hasText: "דניאל לוי" });
-  await expect(otherRow).toHaveCount(0);
+  await expect(otherRow).toBeVisible();
+  await expect(otherRow.locator("select").first()).toBeDisabled();
+  await expect(otherRow.locator(".time-off-toggle").first()).toBeDisabled();
   await page.screenshot({ path: "/tmp/wecomconnect-employee-mobile.png", fullPage: true });
 
   await ownSelect.selectOption("AVAILABLE");

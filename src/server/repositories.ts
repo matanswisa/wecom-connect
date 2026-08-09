@@ -53,8 +53,16 @@ interface AssignmentRow {
 interface SwapRow {
   id: string;
   requester_assignment_id: string;
+  requester_employee_id?: string;
+  requester_employee_name?: string;
   target_employee_id: string;
+  target_employee_name?: string;
   target_assignment_id: string | null;
+  week_start?: string | Date;
+  day_index?: number;
+  shift_type?: ShiftType;
+  target_day_index?: number | null;
+  target_shift_type?: ShiftType | null;
   status: ShiftSwapRequest["status"];
   created_at: string;
 }
@@ -326,8 +334,31 @@ export async function deleteAvailabilityBlock(id: string) {
 }
 
 export async function listSwapRequests() {
-  const rows = await query<SwapRow>("SELECT * FROM shift_swap_requests ORDER BY created_at DESC");
+  const rows = await query<SwapRow>(
+    `SELECT swaps.*,
+            requester_assignment.employee_id AS requester_employee_id,
+            requester.name AS requester_employee_name,
+            target.name AS target_employee_name,
+            requester_assignment.week_start,
+            requester_assignment.day_index,
+            requester_assignment.shift_type,
+            target_assignment.day_index AS target_day_index,
+            target_assignment.shift_type AS target_shift_type
+     FROM shift_swap_requests swaps
+     JOIN shift_assignments requester_assignment
+       ON requester_assignment.id = swaps.requester_assignment_id
+     JOIN employees requester ON requester.id = requester_assignment.employee_id
+     JOIN employees target ON target.id = swaps.target_employee_id
+     LEFT JOIN shift_assignments target_assignment
+       ON target_assignment.id = swaps.target_assignment_id
+     ORDER BY swaps.created_at DESC`
+  );
   return rows.map(toSwap);
+}
+
+export async function findSwapRequest(id: string) {
+  const [row] = await query<SwapRow>("SELECT * FROM shift_swap_requests WHERE id = $1", [id]);
+  return row ? toSwap(row) : null;
 }
 
 export async function createSwapRequest(input: {
@@ -345,7 +376,11 @@ export async function createSwapRequest(input: {
   return toSwap(swap);
 }
 
-export async function updateSwapStatus(id: string, status: ShiftSwapRequest["status"]) {
+export async function updateSwapStatus(
+  id: string,
+  status: ShiftSwapRequest["status"],
+  expectedStatus: ShiftSwapRequest["status"]
+) {
   const decidedColumn =
     status === "PENDING_MANAGER" || status === "DECLINED_BY_EMPLOYEE"
       ? "employee_decided_at"
@@ -353,11 +388,11 @@ export async function updateSwapStatus(id: string, status: ShiftSwapRequest["sta
   const [swap] = await query<SwapRow>(
     `UPDATE shift_swap_requests
      SET status = $2, ${decidedColumn} = now()
-     WHERE id = $1
+     WHERE id = $1 AND status = $3
      RETURNING *`,
-    [id, status]
+    [id, status, expectedStatus]
   );
-  return toSwap(swap);
+  return swap ? toSwap(swap) : null;
 }
 
 export function toUser(row: UserRow): User {
@@ -415,8 +450,16 @@ function toSwap(row: SwapRow): ShiftSwapRequest {
   return {
     id: row.id,
     requesterAssignmentId: row.requester_assignment_id,
+    requesterEmployeeId: row.requester_employee_id,
+    requesterEmployeeName: row.requester_employee_name,
     targetEmployeeId: row.target_employee_id,
+    targetEmployeeName: row.target_employee_name,
     targetAssignmentId: row.target_assignment_id,
+    weekStart: row.week_start ? normalizeDateOnly(row.week_start) : undefined,
+    dayIndex: row.day_index,
+    shiftType: row.shift_type,
+    targetDayIndex: row.target_day_index,
+    targetShiftType: row.target_shift_type,
     status: row.status,
     createdAt: row.created_at
   };

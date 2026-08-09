@@ -857,6 +857,47 @@ select:hover {
   gap: 8px;
 }
 
+.cell-unavailable {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #efb6ba;
+  border-radius: 6px;
+  background: #fff5f5;
+  padding: 7px 8px;
+}
+
+.cell-unavailable > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #aa2630;
+  font-size: 11px;
+}
+
+.cell-unavailable-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cell-unavailable-names > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  background: #fff;
+  color: #7a252c;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.cell-unavailable-names .employee-color-dot {
+  width: 6px;
+  height: 6px;
+}
+
 .employee-chip {
   min-height: 36px;
   border: 1px solid var(--line);
@@ -1011,6 +1052,81 @@ select:hover {
 
 .compact-form {
   margin-top: 14px;
+}
+
+.swap-section-title {
+  margin: 18px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.swap-item {
+  align-items: flex-start;
+}
+
+.swap-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.swap-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.swap-copy > span,
+.swap-created,
+.swap-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.swap-created {
+  font-weight: 500;
+}
+
+.swap-empty {
+  margin: 8px 0 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 11px;
+  text-align: center;
+}
+
+.swap-meta {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.swap-status {
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #536174;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.swap-status.pending_employee,
+.swap-status.pending_manager {
+  background: #fff4d9;
+  color: #875c00;
+}
+
+.swap-status.approved {
+  background: #e9f6e7;
+  color: #397834;
+}
+
+.swap-status.declined_by_employee,
+.swap-status.declined_by_manager {
+  background: #fff0f1;
+  color: #aa2630;
 }
 
 .empty-state {
@@ -1609,6 +1725,11 @@ select:hover {
   color: var(--blue);
 }
 
+.swap-actions button.decline {
+  background: #fff0f1;
+  color: var(--red);
+}
+
 .bottom-summary {
   margin-top: 18px;
   min-height: 66px;
@@ -1920,6 +2041,20 @@ html[data-theme="dark"] {
   background: #302027;
 }
 
+[data-theme="dark"] .cell-unavailable {
+  border-color: #6d3038;
+  background: #311e24;
+}
+
+[data-theme="dark"] .cell-unavailable > strong {
+  color: #f3a0a6;
+}
+
+[data-theme="dark"] .cell-unavailable-names > span {
+  background: #251a20;
+  color: #f4bdc1;
+}
+
 [data-theme="dark"] .shift-worker-picker,
 [data-theme="dark"] .availability-filter-drawer {
   background: var(--panel);
@@ -1955,6 +2090,28 @@ html[data-theme="dark"] {
 
 [data-theme="dark"] .worker-status.unavailable,
 [data-theme="dark"] .availability-choice.unavailable {
+  background: #382126;
+  color: #f09aa0;
+}
+
+[data-theme="dark"] .swap-status {
+  background: #29323f;
+  color: #c2cad5;
+}
+
+[data-theme="dark"] .swap-status.pending_employee,
+[data-theme="dark"] .swap-status.pending_manager {
+  background: #3b311c;
+  color: #f1cf77;
+}
+
+[data-theme="dark"] .swap-status.approved {
+  background: #203322;
+  color: #91ce87;
+}
+
+[data-theme="dark"] .swap-status.declined_by_employee,
+[data-theme="dark"] .swap-status.declined_by_manager {
   background: #382126;
   color: #f09aa0;
 }

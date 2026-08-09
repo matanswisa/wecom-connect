@@ -30,21 +30,22 @@ export async function GET(request: Request) {
   const ownEmployeeIds = new Set(
     employees.filter((employee) => employee.userId === user.id).map((employee) => employee.id)
   );
-  const visibleScheduleAvailabilityBlocks = user.role === "MANAGER"
-    ? scheduleAvailabilityBlocks
-    : scheduleAvailabilityBlocks.filter((block) => ownEmployeeIds.has(block.employeeId));
-  const visibleAvailabilityBlocks = user.role === "MANAGER"
-    ? availabilityBlocks
-    : availabilityBlocks.filter((block) => ownEmployeeIds.has(block.employeeId));
+  const visibleSwaps = user.role === "MANAGER"
+    ? swaps
+    : swaps.filter(
+        (swap) =>
+          (swap.requesterEmployeeId && ownEmployeeIds.has(swap.requesterEmployeeId)) ||
+          ownEmployeeIds.has(swap.targetEmployeeId)
+      );
 
   return NextResponse.json({
     weekStart,
     availabilityWeekStart,
     employees,
     assignments,
-    scheduleAvailabilityBlocks: visibleScheduleAvailabilityBlocks,
-    availabilityBlocks: visibleAvailabilityBlocks,
-    swaps,
+    scheduleAvailabilityBlocks,
+    availabilityBlocks,
+    swaps: visibleSwaps,
     summaries: calculateSummaries(employees, assignments)
   });
 }

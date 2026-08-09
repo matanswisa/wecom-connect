@@ -53,8 +53,16 @@ export interface ShiftAssignment {
 export interface ShiftSwapRequest {
   id: string;
   requesterAssignmentId: string;
+  requesterEmployeeId?: string;
+  requesterEmployeeName?: string;
   targetEmployeeId: string;
+  targetEmployeeName?: string;
   targetAssignmentId: string | null;
+  weekStart?: string;
+  dayIndex?: number;
+  shiftType?: ShiftType;
+  targetDayIndex?: number | null;
+  targetShiftType?: ShiftType | null;
   status: SwapStatus;
   createdAt: string;
 }
