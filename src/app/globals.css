@@ -13,6 +13,16 @@
   --red: #d94848;
   --shadow: 0 4px 18px rgba(24, 34, 55, 0.07);
   --shadow-raised: 0 18px 48px rgba(24, 34, 55, 0.18);
+  --schedule-surface: #f8fafc;
+  --schedule-header: #e9eff6;
+  --schedule-cell: #ffffff;
+  --schedule-cell-alt: #f7f9fc;
+  --schedule-grid: #c4cfdb;
+  --schedule-grid-strong: #9fadc0;
+  --schedule-label: #e4edf8;
+  --schedule-hover: #eef5fd;
+  --schedule-focus: rgba(22, 119, 232, 0.3);
+  --schedule-shadow: 0 12px 34px rgba(24, 34, 55, 0.13);
 }
 
 * {
@@ -447,10 +457,10 @@ select:hover {
 }
 
 .schedule-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(24, 34, 55, 0.06);
+  background: var(--schedule-surface);
+  border: 2px solid var(--schedule-grid-strong);
+  border-radius: 10px;
+  box-shadow: var(--schedule-shadow);
   overflow: auto;
 }
 
@@ -492,11 +502,12 @@ select:hover {
 }
 
 .grid-header {
-  border-bottom: 1px solid var(--line);
-  background: #f7f9fb;
+  border-bottom: 2px solid var(--schedule-grid-strong);
+  background: var(--schedule-header);
+  box-shadow: 0 3px 8px rgba(24, 34, 55, 0.09);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
 }
 
 .shift-label-column,
@@ -504,7 +515,19 @@ select:hover {
 .shift-name,
 .shift-cell {
   padding: 13px;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--schedule-grid);
+}
+
+.shift-label-column,
+.day-header {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.shift-label-column {
+  display: grid;
+  place-items: center;
+  background: var(--schedule-label);
 }
 
 .day-header {
@@ -526,13 +549,18 @@ select:hover {
 
 .shift-row {
   min-height: 174px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--schedule-grid);
+}
+
+.shift-row:last-child {
+  border-bottom: 0;
 }
 
 .shift-name {
   display: grid;
   align-content: start;
   gap: 8px;
+  border-left: 1px solid var(--schedule-grid);
   border-right: 3px solid transparent;
 }
 
@@ -573,7 +601,17 @@ select:hover {
   align-content: start;
   gap: 10px;
   min-height: 174px;
-  background: #fff;
+  background: var(--schedule-cell);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.shift-cell:nth-child(even) {
+  background: var(--schedule-cell-alt);
+}
+
+.shift-cell:hover {
+  background: var(--schedule-hover);
+  box-shadow: inset 0 0 0 2px var(--schedule-focus);
 }
 
 .add-shift {
@@ -1738,6 +1776,16 @@ html[data-theme="dark"] {
   --red: #f07178;
   --shadow: 0 4px 18px rgba(0, 0, 0, 0.24);
   --shadow-raised: 0 18px 48px rgba(0, 0, 0, 0.42);
+  --schedule-surface: #121821;
+  --schedule-header: #252f3d;
+  --schedule-cell: #19212c;
+  --schedule-cell-alt: #1d2632;
+  --schedule-grid: #435166;
+  --schedule-grid-strong: #65758b;
+  --schedule-label: #24364a;
+  --schedule-hover: #20344a;
+  --schedule-focus: rgba(90, 168, 255, 0.34);
+  --schedule-shadow: 0 14px 38px rgba(0, 0, 0, 0.46);
 }
 
 [data-theme="dark"] body,
@@ -1748,7 +1796,6 @@ html[data-theme="dark"] {
 [data-theme="dark"] .auth-panel,
 [data-theme="dark"] .icon-rail,
 [data-theme="dark"] .topbar,
-[data-theme="dark"] .schedule-panel,
 [data-theme="dark"] .summary-block,
 [data-theme="dark"] .availability-panel,
 [data-theme="dark"] .bottom-summary,
@@ -1821,7 +1868,11 @@ html[data-theme="dark"] {
   background: #1b222d;
 }
 
-[data-theme="dark"] .shift-cell,
+[data-theme="dark"] .grid-header {
+  background: var(--schedule-header);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.34);
+}
+
 [data-theme="dark"] .availability-day,
 [data-theme="dark"] .employee-chip,
 [data-theme="dark"] .worker-option,
@@ -1829,6 +1880,18 @@ html[data-theme="dark"] {
 [data-theme="dark"] .summary-controls button,
 [data-theme="dark"] .soft-action {
   background: var(--panel);
+}
+
+[data-theme="dark"] .shift-cell {
+  background: var(--schedule-cell);
+}
+
+[data-theme="dark"] .shift-cell:nth-child(even) {
+  background: var(--schedule-cell-alt);
+}
+
+[data-theme="dark"] .shift-cell:hover {
+  background: var(--schedule-hover);
 }
 
 [data-theme="dark"] .shift-name.morning {
