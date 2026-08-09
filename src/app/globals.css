@@ -528,6 +528,7 @@ select:hover {
   display: grid;
   place-items: center;
   background: var(--schedule-label);
+  font-size: 16px;
 }
 
 .day-header {
@@ -537,7 +538,7 @@ select:hover {
 }
 
 .day-header strong {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .day-header span,
@@ -545,6 +546,11 @@ select:hover {
 .summary-item span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.day-header span,
+.shift-name span {
+  font-size: 14px;
 }
 
 .shift-row {
@@ -562,6 +568,10 @@ select:hover {
   gap: 8px;
   border-left: 1px solid var(--schedule-grid);
   border-right: 3px solid transparent;
+}
+
+.shift-name strong {
+  font-size: 16px;
 }
 
 .shift-name svg {
@@ -1265,10 +1275,15 @@ select:hover {
   padding: 8px 12px;
 }
 
+.availability-header strong,
+.availability-employee strong {
+  font-size: 15px;
+}
+
 .availability-header span,
 .availability-employee span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .availability-row {
