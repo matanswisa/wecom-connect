@@ -34,7 +34,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The `app` service waits for PostgreSQL, runs the schema migration, seeds demo users, and starts Next.js on `http://localhost:3000`.
+The `app` service waits for PostgreSQL, runs the schema migration, and starts Next.js on `http://localhost:3000`. Run `npm run db:seed` separately when you want local demo data.
 
 The seed creates:
 
@@ -42,6 +42,18 @@ The seed creates:
 - Regular employee: `employee` or `employee@wecomconnect.local` / `Wecom123`
 - Manager: `manager@wecomconnect.local` / `Password123!`
 - Employee: `noa@wecomconnect.local` / `Password123!`
+
+These accounts are development fixtures. Do not run the demo seed against production.
+
+## Netlify Deployment
+
+1. Connect this GitHub repository to a new Netlify project.
+2. In the project, open **Database** and initialize Netlify Database, or run `netlify database init --yes` from a linked checkout.
+3. Add a strong `AUTH_SECRET` under **Project configuration → Environment variables**.
+4. Deploy the branch. Netlify detects `@netlify/database`, provisions PostgreSQL, and applies the SQL files under `netlify/database/migrations/` before publishing.
+5. Create the first manager once with `npm run db:create-admin`, using the production database connection temporarily as `DATABASE_URL` and setting `ADMIN_EMAIL`, `ADMIN_NAME`, and `ADMIN_PASSWORD` locally.
+
+Public registration always creates an employee account. Manager accounts must be bootstrapped or created by an existing manager.
 
 ## Scheduling Rules
 

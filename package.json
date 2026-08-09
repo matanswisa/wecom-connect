@@ -2,6 +2,9 @@
   "name": "wecomconnect",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.6.1"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,9 +14,11 @@
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "db:create-admin": "node scripts/create-admin.mjs"
   },
   "dependencies": {
+    "@netlify/database": "^1.1.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
