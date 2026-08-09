@@ -6,13 +6,14 @@ import {
   listEmployees
 } from "@/server/repositories";
 
-export async function DELETE(_: Request, context: { params: { id: string } }) {
-  const user = requireApiUser();
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const user = await requireApiUser();
   if (isApiError(user)) {
     return user;
   }
 
-  const block = await findAvailabilityBlock(context.params.id);
+  const { id } = await context.params;
+  const block = await findAvailabilityBlock(id);
   if (!block) {
     return jsonError("Availability block was not found.", 404);
   }

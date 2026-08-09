@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Employee } from "@/lib/types";
 
 export function useAvailabilityView({
@@ -16,7 +16,8 @@ export function useAvailabilityView({
 }) {
   // A null selection means all current employees, including employees added after initialization.
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[] | null>(null);
-  const [page, setPage] = useState(1);
+  const [pageState, setPageState] = useState({ page: 1, resetKey });
+  const page = pageState.resetKey === resetKey ? pageState.page : 1;
 
   const selection = useMemo(() => {
     const currentIds = new Set(employees.map((employee) => employee.id));
@@ -39,11 +40,8 @@ export function useAvailabilityView({
     [pageSize, safePage, selectedEmployees]
   );
 
-  useEffect(() => {
-    setPage(1);
-  }, [resetKey, selectedEmployeeIds]);
-
   const toggleEmployee = useCallback((employeeId: string) => {
+    setPageState({ page: 1, resetKey });
     setSelectedEmployeeIds((current) => {
       const selected = new Set(current ?? employees.map((employee) => employee.id));
       if (selected.has(employeeId)) {
@@ -53,16 +51,20 @@ export function useAvailabilityView({
       }
       return selected.size === employees.length ? null : [...selected];
     });
-  }, [employees]);
+  }, [employees, resetKey]);
 
   const toggleAll = useCallback((selected: boolean) => {
+    setPageState({ page: 1, resetKey });
     setSelectedEmployeeIds(selected ? null : []);
-  }, []);
+  }, [resetKey]);
 
-  const previousPage = useCallback(() => setPage((current) => Math.max(1, current - 1)), []);
+  const previousPage = useCallback(
+    () => setPageState((current) => ({ page: Math.max(1, current.page - 1), resetKey })),
+    [resetKey]
+  );
   const nextPage = useCallback(
-    () => setPage((current) => Math.min(pageCount, current + 1)),
-    [pageCount]
+    () => setPageState((current) => ({ page: Math.min(pageCount, current.page + 1), resetKey })),
+    [pageCount, resetKey]
   );
 
   return {

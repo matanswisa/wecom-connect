@@ -27,7 +27,6 @@ export function useUndoableAction<T>({
       return;
     }
     const expiresAt = Date.now() + durationMs;
-    setSecondsLeft(Math.ceil(durationMs / 1000));
     const interval = window.setInterval(() => {
       setSecondsLeft(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
     }, 200);
@@ -41,7 +40,10 @@ export function useUndoableAction<T>({
     };
   }, [durationMs, pending]);
 
-  const stage = useCallback((value: T) => setPending((current) => current ?? value), []);
+  const stage = useCallback((value: T) => {
+    setSecondsLeft(Math.ceil(durationMs / 1000));
+    setPending((current) => current ?? value);
+  }, [durationMs]);
   const undo = useCallback(() => {
     setPending((current) => {
       if (current) {

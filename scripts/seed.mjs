@@ -5,9 +5,16 @@ import pg from "pg";
 
 const scryptAsync = promisify(scrypt);
 const databaseUrl = process.env.DATABASE_URL;
+const demoPassword = process.env.DEMO_PASSWORD ?? "LocalOnly123!";
 
 if (!databaseUrl) {
   throw new Error("DATABASE_URL is required");
+}
+if (process.env.NODE_ENV === "production") {
+  throw new Error("The demo seed is disabled in production");
+}
+if (demoPassword.length < 12) {
+  throw new Error("DEMO_PASSWORD must contain at least 12 characters");
 }
 
 async function hashPassword(password) {
@@ -19,21 +26,20 @@ async function hashPassword(password) {
 const client = new pg.Client({ connectionString: databaseUrl });
 await client.connect();
 
-const demoPasswordHash = await hashPassword("Password123!");
-const adminPasswordHash = await hashPassword("Wecom123");
+const demoPasswordHash = await hashPassword(demoPassword);
 
 await client.query(
   `INSERT INTO users (email, name, password_hash, role)
    VALUES
     ('manager@wecomconnect.local', 'מנהל מערכת', $1, 'MANAGER'),
     ('noa@wecomconnect.local', 'נועה כהן', $1, 'EMPLOYEE'),
-    ('admin@wecomconnect.local', 'מנהל ראשי', $2, 'MANAGER'),
-    ('employee@wecomconnect.local', 'עובד בדיקה', $2, 'EMPLOYEE')
+    ('admin@wecomconnect.local', 'מנהל ראשי', $1, 'MANAGER'),
+    ('employee@wecomconnect.local', 'עובד בדיקה', $1, 'EMPLOYEE')
    ON CONFLICT (email) DO UPDATE SET
     name = EXCLUDED.name,
     password_hash = EXCLUDED.password_hash,
     role = EXCLUDED.role`,
-  [demoPasswordHash, adminPasswordHash]
+  [demoPasswordHash]
 );
 
 await client.query(

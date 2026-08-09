@@ -49,14 +49,29 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
   shift_type TEXT NOT NULL CHECK (shift_type IN ('MORNING', 'EVENING', 'NIGHT')),
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (week_start, day_index, shift_type, employee_id)
+  UNIQUE (week_start, day_index, shift_type)
+);
+
+CREATE TABLE IF NOT EXISTS auth_login_attempts (
+  attempt_key TEXT PRIMARY KEY,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  first_failed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_failed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS shift_swap_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  requester_assignment_id UUID NOT NULL REFERENCES shift_assignments(id) ON DELETE CASCADE,
+  requester_assignment_id UUID REFERENCES shift_assignments(id) ON DELETE SET NULL,
   target_employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  target_assignment_id UUID REFERENCES shift_assignments(id) ON DELETE CASCADE,
+  target_assignment_id UUID REFERENCES shift_assignments(id) ON DELETE SET NULL,
+  requester_employee_id_snapshot UUID,
+  requester_employee_name_snapshot TEXT,
+  target_employee_name_snapshot TEXT,
+  week_start_snapshot DATE,
+  day_index_snapshot INTEGER,
+  shift_type_snapshot TEXT,
+  target_day_index_snapshot INTEGER,
+  target_shift_type_snapshot TEXT,
   status TEXT NOT NULL CHECK (
     status IN ('PENDING_EMPLOYEE', 'DECLINED_BY_EMPLOYEE', 'PENDING_MANAGER', 'DECLINED_BY_MANAGER', 'APPROVED')
   ) DEFAULT 'PENDING_EMPLOYEE',

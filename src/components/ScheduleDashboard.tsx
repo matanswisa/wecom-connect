@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Bell,
@@ -71,6 +72,16 @@ interface PendingAssignment {
   dayIndex: number;
   shiftType: ShiftType;
   warnings: string[];
+  replaceAssignmentId: string | null;
+}
+
+interface PendingReplacement {
+  employeeId: string;
+  employeeName: string;
+  dayIndex: number;
+  shiftType: ShiftType;
+  existingAssignmentId: string;
+  existingEmployeeName: string;
 }
 
 interface SwapSubmission {
@@ -114,10 +125,12 @@ export function ScheduleDashboard({
   initialWeekStart: string;
   initialAvailabilityWeekStart: string;
 }) {
+  const router = useRouter();
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [schedule, setSchedule] = useState<SchedulePayload>(EMPTY_SCHEDULE);
   const [assignmentPicker, setAssignmentPicker] = useState<AssignmentPicker | null>(null);
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
   const [pendingSwap, setPendingSwap] = useState<PendingSwap | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<NavigationSection>("schedule");
@@ -230,6 +243,8 @@ export function ScheduleDashboard({
   });
 
   useEffect(() => {
+    // Initial and week-change data fetching is intentionally synchronized here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedule(weekStart);
   }, [weekStart, loadSchedule]);
 
@@ -237,7 +252,8 @@ export function ScheduleDashboard({
     employeeId: string,
     dayIndex: number,
     shiftType: ShiftType,
-    acknowledgeWarnings = false
+    acknowledgeWarnings = false,
+    replaceAssignmentId: string | null = null
   ) {
     const response = await fetch("/api/assignments", {
       method: "POST",
@@ -247,7 +263,8 @@ export function ScheduleDashboard({
         weekStart,
         dayIndex,
         shiftType,
-        acknowledgeWarnings
+        acknowledgeWarnings,
+        replaceAssignmentId
       })
     });
     const body = await response.json();
@@ -257,7 +274,13 @@ export function ScheduleDashboard({
         (warning: { message: string }) => warning.message
       );
       if (warnings.length > 0 && !(body.details?.errors?.length > 0)) {
-        setPendingAssignment({ employeeId, dayIndex, shiftType, warnings });
+        setPendingAssignment({
+          employeeId,
+          dayIndex,
+          shiftType,
+          warnings,
+          replaceAssignmentId
+        });
         return;
       }
       setToast(body.details?.errors?.[0]?.message ?? body.error ?? "השיבוץ נכשל.");
@@ -265,7 +288,13 @@ export function ScheduleDashboard({
     }
 
     setPendingAssignment(null);
-    setToast(acknowledgeWarnings ? "השיבוץ נשמר לאחר אישור האזהרה." : "השיבוץ נשמר.");
+    setToast(
+      replaceAssignmentId
+        ? "העובד הוחלף בהצלחה."
+        : acknowledgeWarnings
+          ? "השיבוץ נשמר לאחר אישור האזהרה."
+          : "השיבוץ נשמר."
+    );
     await loadSchedule();
   }
 
@@ -392,7 +421,8 @@ export function ScheduleDashboard({
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+    router.push("/login");
+    router.refresh();
   }
 
   function exportSchedule() {
@@ -653,6 +683,22 @@ export function ScheduleDashboard({
                               onSave={() => {
                                 const employeeId = assignmentPicker.employeeId;
                                 setAssignmentPicker(null);
+                                const occupiedAssignment = assignments[0];
+                                const selectedEmployee = employeesById.get(employeeId);
+                                const occupiedEmployee = occupiedAssignment
+                                  ? employeesById.get(occupiedAssignment.employeeId)
+                                  : null;
+                                if (occupiedAssignment) {
+                                  setPendingReplacement({
+                                    employeeId,
+                                    employeeName: selectedEmployee?.name ?? "העובד החדש",
+                                    dayIndex: day.index,
+                                    shiftType,
+                                    existingAssignmentId: occupiedAssignment.id,
+                                    existingEmployeeName: occupiedEmployee?.name ?? "העובד הקיים"
+                                  });
+                                  return;
+                                }
                                 void assignShift(employeeId, day.index, shiftType);
                               }}
                               onClose={() => setAssignmentPicker(null)}
@@ -663,8 +709,8 @@ export function ScheduleDashboard({
                               data-pdf-hide="true"
                               onClick={() => setAssignmentPicker({ cellKey: key, employeeId: "" })}
                             >
-                              <Plus size={16} />
-                              שיבוץ
+                              {assignments.length > 0 ? <Repeat2 size={16} /> : <Plus size={16} />}
+                              {assignments.length > 0 ? "החלפת עובד" : "שיבוץ"}
                             </button>
                           )
                         ) : (
@@ -912,6 +958,46 @@ export function ScheduleDashboard({
           onUndo={assignmentRemoval.undo}
         />
       ) : null}
+      {pendingReplacement ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="warning-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="replacement-title"
+          >
+            <div className="warning-dialog-icon"><Repeat2 size={22} /></div>
+            <div>
+              <h2 id="replacement-title">אישור החלפת עובד</h2>
+              <p className="dialog-copy">
+                המשמרת כבר מאוישת על ידי <strong>{pendingReplacement.existingEmployeeName}</strong>.
+                {" "}להחליף אותו ב־<strong>{pendingReplacement.employeeName}</strong>?
+              </p>
+            </div>
+            <div className="warning-dialog-actions">
+              <button className="soft-action" onClick={() => setPendingReplacement(null)}>
+                ביטול
+              </button>
+              <button
+                className="warning-action"
+                onClick={() => {
+                  const replacement = pendingReplacement;
+                  setPendingReplacement(null);
+                  void assignShift(
+                    replacement.employeeId,
+                    replacement.dayIndex,
+                    replacement.shiftType,
+                    false,
+                    replacement.existingAssignmentId
+                  );
+                }}
+              >
+                החלף עובד
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {pendingAssignment ? (
         <div className="modal-backdrop" role="presentation">
           <section className="warning-dialog" role="dialog" aria-modal="true" aria-labelledby="warning-title">
@@ -931,7 +1017,8 @@ export function ScheduleDashboard({
                     pendingAssignment.employeeId,
                     pendingAssignment.dayIndex,
                     pendingAssignment.shiftType,
-                    true
+                    true,
+                    pendingAssignment.replaceAssignmentId
                   )
                 }
               >

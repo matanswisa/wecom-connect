@@ -1,22 +1,18 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 type Theme = "light" | "dark";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("light");
-
-  useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-  }, []);
+  const theme = useSyncExternalStore(subscribeToTheme, getTheme, () => "light");
 
   function toggleTheme() {
     const nextTheme: Theme = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = nextTheme;
     localStorage.setItem("wecomconnect-theme", nextTheme);
-    setTheme(nextTheme);
+    window.dispatchEvent(new Event("wecomconnect-theme-change"));
   }
 
   const isDark = theme === "dark";
@@ -31,4 +27,13 @@ export function ThemeToggle() {
       {isDark ? <Sun size={18} /> : <Moon size={18} />}
     </button>
   );
+}
+
+function subscribeToTheme(onStoreChange: () => void) {
+  window.addEventListener("wecomconnect-theme-change", onStoreChange);
+  return () => window.removeEventListener("wecomconnect-theme-change", onStoreChange);
+}
+
+function getTheme(): Theme {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }

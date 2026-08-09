@@ -3,14 +3,14 @@ import { validateAssignment } from "@/lib/shifts";
 import type { ShiftType } from "@/lib/types";
 import { isApiError, jsonError, requireApiUser } from "@/server/api";
 import {
-  createAssignment,
   listAssignments,
   listAvailabilityBlocks,
-  listEmployees
+  listEmployees,
+  replaceAssignment
 } from "@/server/repositories";
 
 export async function POST(request: Request) {
-  const user = requireApiUser(["MANAGER"]);
+  const user = await requireApiUser(["MANAGER"]);
   if (isApiError(user)) {
     return user;
   }
@@ -20,6 +20,9 @@ export async function POST(request: Request) {
   const weekStart = String(body.weekStart ?? "");
   const dayIndex = Number(body.dayIndex);
   const shiftType = String(body.shiftType ?? "") as ShiftType;
+  const replaceAssignmentId = body.replaceAssignmentId
+    ? String(body.replaceAssignmentId)
+    : null;
   const employees = await listEmployees();
   const employee = employees.find((item) => item.id === employeeId);
 
@@ -38,10 +41,30 @@ export async function POST(request: Request) {
     listAssignments(weekStart),
     listAvailabilityBlocks(weekStart)
   ]);
+  const occupiedAssignment = existingAssignments.find(
+    (assignment) =>
+      assignment.dayIndex === dayIndex && assignment.shiftType === shiftType
+  );
+
+  if ((occupiedAssignment?.id ?? null) !== replaceAssignmentId) {
+    return jsonError("Shift is already occupied or was changed.", 409, {
+      errors: [{
+        code: "SHIFT_OCCUPIED",
+        message: occupiedAssignment
+          ? "המשמרת כבר מאוישת. יש לאשר החלפת עובד."
+          : "השיבוץ השתנה בינתיים. יש לרענן ולנסות שוב."
+      }],
+      warnings: []
+    });
+  }
+
+  const assignmentsForValidation = occupiedAssignment
+    ? existingAssignments.filter((assignment) => assignment.id !== occupiedAssignment.id)
+    : existingAssignments;
   const validation = validateAssignment(
     { employeeId, weekStart, dayIndex, shiftType },
     employee,
-    existingAssignments,
+    assignmentsForValidation,
     availabilityBlocks
   );
 
@@ -53,13 +76,26 @@ export async function POST(request: Request) {
     return jsonError("Assignment requires warning confirmation.", 409, validation);
   }
 
-  const assignment = await createAssignment({
-    employeeId,
-    weekStart,
-    dayIndex,
-    shiftType,
-    notes: String(body.notes ?? "")
-  });
+  const assignment = await replaceAssignment(
+    {
+      employeeId,
+      weekStart,
+      dayIndex,
+      shiftType,
+      notes: String(body.notes ?? "")
+    },
+    replaceAssignmentId
+  );
+
+  if (!assignment) {
+    return jsonError("Shift changed while it was being assigned.", 409, {
+      errors: [{
+        code: "SHIFT_CHANGED",
+        message: "השיבוץ השתנה בינתיים. יש לרענן ולנסות שוב."
+      }],
+      warnings: []
+    });
+  }
 
   return NextResponse.json({ assignment, validation }, { status: 201 });
 }

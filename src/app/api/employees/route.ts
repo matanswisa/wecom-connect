@@ -5,7 +5,7 @@ import { handleEmployeeWriteError, parseEmployeeInput } from "@/server/employeeV
 import { createManagedEmployee } from "@/server/repositories";
 
 export async function POST(request: Request) {
-  const user = requireApiUser(["MANAGER"]);
+  const user = await requireApiUser(["MANAGER"]);
   if (isApiError(user)) {
     return user;
   }
@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   const body = await request.json();
   const input = parseEmployeeInput(body);
   const password = String(body.password ?? "");
-  if (!input || password.length < 8) {
-    return jsonError("יש למלא שם, אימייל, תפקיד, מגבלות משמרות וסיסמה באורך 8 תווים לפחות.");
+  if (!input || password.length < 12) {
+    return jsonError("יש למלא שם, אימייל, תפקיד, מגבלות משמרות וסיסמה באורך 12 תווים לפחות.");
   }
 
   try {

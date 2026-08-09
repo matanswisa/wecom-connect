@@ -9,7 +9,7 @@ import {
 } from "@/server/repositories";
 
 export async function POST(request: Request) {
-  const user = requireApiUser();
+  const user = await requireApiUser();
   if (isApiError(user)) {
     return user;
   }

@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 
-type Mode = "login" | "register";
-
-export function AuthForm({ mode }: { mode: Mode }) {
+export function AuthForm() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -19,7 +17,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
     const formData = new FormData(event.currentTarget);
     const payload = Object.fromEntries(formData.entries());
-    const response = await fetch(`/api/auth/${mode}`, {
+    const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -45,28 +43,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
           <Image src="/wecom-logo.svg" alt="wecom" width={132} height={60} priority />
           <span>connect</span>
         </div>
-        <h1>{mode === "login" ? "כניסה למערכת" : "יצירת משתמש"}</h1>
+        <h1>כניסה למערכת</h1>
         <form onSubmit={handleSubmit} className="auth-form">
-          {mode === "register" ? (
-            <>
-              <label>
-                שם מלא
-                <input name="name" required autoComplete="name" />
-              </label>
-              <label>
-                סוג משתמש
-                <select name="role" defaultValue="EMPLOYEE">
-                  <option value="EMPLOYEE">עובד</option>
-                  <option value="MANAGER">מנהלת</option>
-                </select>
-              </label>
-            </>
-          ) : null}
           <label>
-            {mode === "login" ? "אימייל או שם משתמש" : "אימייל"}
+            אימייל או שם משתמש
             <input
               name="email"
-              type={mode === "login" ? "text" : "email"}
+              type="text"
               required
               autoComplete="username"
             />
@@ -78,17 +61,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
               type="password"
               required
               minLength={8}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              autoComplete="current-password"
             />
           </label>
           {error ? <p className="form-error">{error}</p> : null}
           <button className="primary-button" disabled={isSubmitting}>
-            {isSubmitting ? "שומר..." : mode === "login" ? "כניסה" : "הרשמה"}
+            {isSubmitting ? "מתחבר..." : "כניסה"}
           </button>
         </form>
-        <a className="auth-link" href={mode === "login" ? "/register" : "/login"}>
-          {mode === "login" ? "אין לך משתמש? הרשמה" : "כבר יש משתמש? כניסה"}
-        </a>
       </section>
     </main>
   );

@@ -81,10 +81,10 @@ export function EmployeeEditorDialog({
             <input
               name="password"
               type="password"
-              minLength={8}
+              minLength={12}
               required={isCreate}
               autoComplete="new-password"
-              placeholder={isCreate ? "לפחות 8 תווים" : "השאר ריק כדי לשמור את הסיסמה"}
+              placeholder={isCreate ? "לפחות 12 תווים" : "השאר ריק כדי לשמור את הסיסמה"}
             />
           </label>
           <div className="dialog-actions">

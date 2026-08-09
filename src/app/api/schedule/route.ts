@@ -10,7 +10,7 @@ import {
 } from "@/server/repositories";
 
 export async function GET(request: Request) {
-  const user = requireApiUser();
+  const user = await requireApiUser();
   if (isApiError(user)) {
     return user;
   }
@@ -37,11 +37,18 @@ export async function GET(request: Request) {
           (swap.requesterEmployeeId && ownEmployeeIds.has(swap.requesterEmployeeId)) ||
           ownEmployeeIds.has(swap.targetEmployeeId)
       );
+  const visibleEmployees = user.role === "MANAGER"
+    ? employees
+    : employees.map((employee) =>
+        employee.userId === user.id
+          ? employee
+          : { ...employee, userId: null, email: "" }
+      );
 
   return NextResponse.json({
     weekStart,
     availabilityWeekStart,
-    employees,
+    employees: visibleEmployees,
     assignments,
     scheduleAvailabilityBlocks,
     availabilityBlocks,

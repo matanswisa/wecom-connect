@@ -5,7 +5,6 @@ const { Pool } = pg;
 
 declare global {
   // Reuse the pool during Next.js hot reloads and warm function invocations.
-  // eslint-disable-next-line no-var
   var wecomconnectPool: pg.Pool | undefined;
 }
 

@@ -52,7 +52,7 @@ export interface ShiftAssignment {
 
 export interface ShiftSwapRequest {
   id: string;
-  requesterAssignmentId: string;
+  requesterAssignmentId: string | null;
   requesterEmployeeId?: string;
   requesterEmployeeName?: string;
   targetEmployeeId: string;

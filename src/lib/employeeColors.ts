@@ -8,6 +8,7 @@ const EMPLOYEE_COLOR: EmployeeColor = {
   soft: "#eff6ff"
 };
 
-export function getEmployeeColor(_identifier: string): EmployeeColor {
+export function getEmployeeColor(identifier: string): EmployeeColor {
+  void identifier;
   return EMPLOYEE_COLOR;
 }

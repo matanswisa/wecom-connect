@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function login(page: Page, email: string, password = "Password123!") {
+const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "LocalOnly123!";
+
+async function login(page: Page, email: string, password = E2E_PASSWORD) {
   await page.goto("/login");
   await page.getByLabel("אימייל או שם משתמש").fill(email);
   await page.getByLabel("סיסמה").fill(password);
@@ -13,7 +15,7 @@ test("manager sees a complete week and every employee constraint", async ({ page
   await page.addInitScript(() => {
     window.localStorage.setItem("wecomconnect-theme", "light");
   });
-  await login(page, "admin", "Wecom123");
+  await login(page, "admin");
 
   await expect(page.getByRole("heading", { name: "לוח משמרות שבועי" })).toBeVisible();
   await expect(page.locator(".day-header").filter({ hasText: "שישי" })).toBeVisible();
@@ -147,7 +149,7 @@ test("manager sees a complete week and every employee constraint", async ({ page
 
 test("manager can add, edit, constrain, and delete an employee", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await login(page, "admin", "Wecom123");
+  await login(page, "admin");
 
   const suffix = Date.now();
   const originalName = `עובד זמני ${suffix}`;
@@ -207,7 +209,7 @@ test("manager can add, edit, constrain, and delete an employee", async ({ page }
 
 test("regular employee can use their availability controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await login(page, "employee", "Wecom123");
+  await login(page, "employee");
 
   const ownRow = page.locator(".availability-row").filter({ hasText: "עובד בדיקה" });
   await expect(page.locator(".add-shift")).toHaveCount(0);

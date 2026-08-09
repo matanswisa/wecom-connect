@@ -30,7 +30,7 @@ const ACTIONS: Record<string, {
   }
 };
 
-export async function PATCH(request: Request, context: { params: { id: string } }) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const body = await request.json();
   const action = ACTIONS[String(body.action ?? "")];
 
@@ -38,12 +38,13 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     return jsonError("Unknown swap action.");
   }
 
-  const user = requireApiUser(action.actor === "MANAGER" ? ["MANAGER"] : undefined);
+  const user = await requireApiUser(action.actor === "MANAGER" ? ["MANAGER"] : undefined);
   if (isApiError(user)) {
     return user;
   }
 
-  const swapRequest = await findSwapRequest(context.params.id);
+  const { id } = await context.params;
+  const swapRequest = await findSwapRequest(id);
   if (!swapRequest) {
     return jsonError("Swap request not found.", 404);
   }
@@ -62,7 +63,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     return jsonError("This swap request has already been handled.", 409);
   }
 
-  const swap = await updateSwapStatus(context.params.id, action.status, action.expectedStatus);
+  const swap = await updateSwapStatus(id, action.status, action.expectedStatus);
   if (!swap) {
     return jsonError("This swap request has already been handled.", 409);
   }

@@ -52,7 +52,7 @@ interface AssignmentRow {
 
 interface SwapRow {
   id: string;
-  requester_assignment_id: string;
+  requester_assignment_id: string | null;
   requester_employee_id?: string;
   requester_employee_name?: string;
   target_employee_id: string;
@@ -252,6 +252,45 @@ export async function listAssignments(weekStart: string) {
   return rows.map(toAssignment);
 }
 
+export async function findUserById(id: string) {
+  const [user] = await query<UserRow>("SELECT * FROM users WHERE id = $1", [id]);
+  return user ?? null;
+}
+
+export async function isLoginRateLimited(attemptKey: string) {
+  const [row] = await query<{ blocked: boolean }>(
+    `SELECT failed_count >= 5
+            AND first_failed_at > now() - interval '15 minutes' AS blocked
+     FROM auth_login_attempts
+     WHERE attempt_key = $1`,
+    [attemptKey]
+  );
+  return row?.blocked ?? false;
+}
+
+export async function recordLoginFailure(attemptKey: string) {
+  await query(
+    `INSERT INTO auth_login_attempts
+       (attempt_key, failed_count, first_failed_at, last_failed_at)
+     VALUES ($1, 1, now(), now())
+     ON CONFLICT (attempt_key) DO UPDATE SET
+       failed_count = CASE
+         WHEN auth_login_attempts.first_failed_at <= now() - interval '15 minutes' THEN 1
+         ELSE auth_login_attempts.failed_count + 1
+       END,
+       first_failed_at = CASE
+         WHEN auth_login_attempts.first_failed_at <= now() - interval '15 minutes' THEN now()
+         ELSE auth_login_attempts.first_failed_at
+       END,
+       last_failed_at = now()`,
+    [attemptKey]
+  );
+}
+
+export async function clearLoginFailures(attemptKey: string) {
+  await query("DELETE FROM auth_login_attempts WHERE attempt_key = $1", [attemptKey]);
+}
+
 export async function findAssignment(id: string) {
   const [row] = await query<AssignmentRow>("SELECT * FROM shift_assignments WHERE id = $1", [id]);
   return row ? toAssignment(row) : null;
@@ -270,20 +309,54 @@ export async function findAvailabilityBlock(id: string) {
   return row ? toAvailabilityBlock(row) : null;
 }
 
-export async function createAssignment(input: {
+export async function replaceAssignment(input: {
   employeeId: string;
   weekStart: string;
   dayIndex: number;
   shiftType: ShiftType;
   notes?: string;
-}) {
-  const [assignment] = await query<AssignmentRow>(
-    `INSERT INTO shift_assignments (employee_id, week_start, day_index, shift_type, notes)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [input.employeeId, input.weekStart, input.dayIndex, input.shiftType, input.notes ?? ""]
-  );
-  return toAssignment(assignment);
+}, expectedAssignmentId: string | null) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const currentResult = await client.query<AssignmentRow>(
+      `SELECT * FROM shift_assignments
+       WHERE week_start = $1 AND day_index = $2 AND shift_type = $3
+       FOR UPDATE`,
+      [input.weekStart, input.dayIndex, input.shiftType]
+    );
+    const currentAssignment = currentResult.rows[0] ?? null;
+
+    if ((currentAssignment?.id ?? null) !== expectedAssignmentId) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const assignmentResult = currentAssignment
+      ? await client.query<AssignmentRow>(
+          `UPDATE shift_assignments
+           SET employee_id = $2, notes = $3
+           WHERE id = $1
+           RETURNING *`,
+          [currentAssignment.id, input.employeeId, input.notes ?? ""]
+        )
+      : await client.query<AssignmentRow>(
+          `INSERT INTO shift_assignments (employee_id, week_start, day_index, shift_type, notes)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [input.employeeId, input.weekStart, input.dayIndex, input.shiftType, input.notes ?? ""]
+        );
+    await client.query("COMMIT");
+    return toAssignment(assignmentResult.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if ((error as { code?: string }).code === "23505") {
+      return null;
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteAssignment(id: string) {
@@ -336,19 +409,24 @@ export async function deleteAvailabilityBlock(id: string) {
 export async function listSwapRequests() {
   const rows = await query<SwapRow>(
     `SELECT swaps.*,
-            requester_assignment.employee_id AS requester_employee_id,
-            requester.name AS requester_employee_name,
-            target.name AS target_employee_name,
-            requester_assignment.week_start,
-            requester_assignment.day_index,
-            requester_assignment.shift_type,
-            target_assignment.day_index AS target_day_index,
-            target_assignment.shift_type AS target_shift_type
+            COALESCE(swaps.requester_employee_id_snapshot, requester_assignment.employee_id)
+              AS requester_employee_id,
+            COALESCE(swaps.requester_employee_name_snapshot, requester.name)
+              AS requester_employee_name,
+            COALESCE(swaps.target_employee_name_snapshot, target.name)
+              AS target_employee_name,
+            COALESCE(swaps.week_start_snapshot, requester_assignment.week_start) AS week_start,
+            COALESCE(swaps.day_index_snapshot, requester_assignment.day_index) AS day_index,
+            COALESCE(swaps.shift_type_snapshot, requester_assignment.shift_type) AS shift_type,
+            COALESCE(swaps.target_day_index_snapshot, target_assignment.day_index)
+              AS target_day_index,
+            COALESCE(swaps.target_shift_type_snapshot, target_assignment.shift_type)
+              AS target_shift_type
      FROM shift_swap_requests swaps
-     JOIN shift_assignments requester_assignment
+     LEFT JOIN shift_assignments requester_assignment
        ON requester_assignment.id = swaps.requester_assignment_id
-     JOIN employees requester ON requester.id = requester_assignment.employee_id
-     JOIN employees target ON target.id = swaps.target_employee_id
+     LEFT JOIN employees requester ON requester.id = requester_assignment.employee_id
+     LEFT JOIN employees target ON target.id = swaps.target_employee_id
      LEFT JOIN shift_assignments target_assignment
        ON target_assignment.id = swaps.target_assignment_id
      ORDER BY swaps.created_at DESC`
@@ -368,8 +446,20 @@ export async function createSwapRequest(input: {
 }) {
   const [swap] = await query<SwapRow>(
     `INSERT INTO shift_swap_requests
-      (requester_assignment_id, target_employee_id, target_assignment_id)
-     VALUES ($1, $2, $3)
+      (requester_assignment_id, target_employee_id, target_assignment_id,
+       requester_employee_id_snapshot, requester_employee_name_snapshot,
+       target_employee_name_snapshot, week_start_snapshot, day_index_snapshot,
+       shift_type_snapshot, target_day_index_snapshot, target_shift_type_snapshot)
+     SELECT requester_assignment.id, target.id, target_assignment.id,
+            requester_assignment.employee_id, requester.name, target.name,
+            requester_assignment.week_start, requester_assignment.day_index,
+            requester_assignment.shift_type, target_assignment.day_index,
+            target_assignment.shift_type
+     FROM shift_assignments requester_assignment
+     JOIN employees requester ON requester.id = requester_assignment.employee_id
+     JOIN employees target ON target.id = $2
+     LEFT JOIN shift_assignments target_assignment ON target_assignment.id = $3
+     WHERE requester_assignment.id = $1
      RETURNING *`,
     [input.requesterAssignmentId, input.targetEmployeeId, input.targetAssignmentId]
   );
