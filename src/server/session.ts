@@ -80,8 +80,19 @@ export function clearSessionCookie() {
 }
 
 function sign(value: string): string {
-  const secret = process.env.AUTH_SECRET ?? "development-only-secret";
+  const secret = getAuthSecret();
   return createHmac("sha256", secret).update(value).digest("base64url");
+}
+
+function getAuthSecret(): string {
+  const configuredSecret = process.env.AUTH_SECRET?.trim();
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET is required in production");
+  }
+  return "development-only-secret";
 }
 
 function isEqual(left: string, right: string): boolean {
