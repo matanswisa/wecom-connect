@@ -17,8 +17,8 @@
   --schedule-header: #e9eff6;
   --schedule-cell: #ffffff;
   --schedule-cell-alt: #f7f9fc;
-  --schedule-grid: #c4cfdb;
-  --schedule-grid-strong: #9fadc0;
+  --schedule-grid: #4b5563;
+  --schedule-grid-strong: #111827;
   --schedule-label: #e4edf8;
   --schedule-hover: #eef5fd;
   --schedule-focus: rgba(22, 119, 232, 0.3);
@@ -515,7 +515,7 @@ select:hover {
 .shift-name,
 .shift-cell {
   padding: 13px;
-  border-left: 1px solid var(--schedule-grid);
+  border-left: 2px solid var(--schedule-grid);
 }
 
 .shift-label-column,
@@ -553,6 +553,12 @@ select:hover {
   font-size: 14px;
 }
 
+.day-header span {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+}
+
 .shift-row {
   min-height: 174px;
   border-bottom: 2px solid var(--schedule-grid);
@@ -566,12 +572,13 @@ select:hover {
   display: grid;
   align-content: start;
   gap: 8px;
-  border-left: 1px solid var(--schedule-grid);
+  border-left: 2px solid var(--schedule-grid);
   border-right: 3px solid transparent;
 }
 
 .shift-name strong {
   font-size: 16px;
+  font-weight: 800;
 }
 
 .shift-name svg {
@@ -935,6 +942,7 @@ select:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 800;
 }
 
 .assignment-warning {
@@ -1084,6 +1092,7 @@ select:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 800;
   font-size: 13px;
 }
 
@@ -1151,7 +1160,7 @@ select:hover {
   min-width: 0;
   margin-top: 18px;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 2px solid var(--schedule-grid-strong);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(24, 34, 55, 0.05);
   overflow: hidden;
@@ -1259,13 +1268,13 @@ select:hover {
 
 .availability-grid > div {
   min-width: 0;
-  border-left: 1px solid var(--line);
+  border-left: 2px solid var(--schedule-grid);
 }
 
 .availability-header {
   min-height: 58px;
   background: #f7f9fb;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--schedule-grid-strong);
 }
 
 .availability-header > div {
@@ -1278,6 +1287,7 @@ select:hover {
 .availability-header strong,
 .availability-employee strong {
   font-size: 15px;
+  font-weight: 800;
 }
 
 .availability-header span,
@@ -1286,9 +1296,15 @@ select:hover {
   font-size: 13px;
 }
 
+.availability-header span {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .availability-row {
   min-height: 152px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--schedule-grid);
 }
 
 .availability-row:last-child {
@@ -1362,6 +1378,7 @@ select:hover {
   border-radius: 4px;
   padding: 0 4px;
   font-size: 11px;
+  font-weight: 700;
 }
 
 .availability-choice select:disabled,
@@ -1916,8 +1933,8 @@ html[data-theme="dark"] {
   --schedule-header: #252f3d;
   --schedule-cell: #19212c;
   --schedule-cell-alt: #1d2632;
-  --schedule-grid: #435166;
-  --schedule-grid-strong: #65758b;
+  --schedule-grid: #718096;
+  --schedule-grid-strong: #a9b4c3;
   --schedule-label: #24364a;
   --schedule-hover: #20344a;
   --schedule-focus: rgba(90, 168, 255, 0.34);
