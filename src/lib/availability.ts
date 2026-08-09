@@ -58,7 +58,7 @@ export function availabilityStatusLabel(status: AvailabilityBlock["status"] | "A
     AVAILABLE: "פנוי",
     UNAVAILABLE: "לא זמין",
     PREFERRED: "מעוניין לעבוד",
-    TIME_OFF: "Time Off"
+    TIME_OFF: "חופש"
   };
   return labels[status];
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSundayWeekStart } from "@/lib/dates";
+import { getAvailabilityWeekStart, getSundayWeekStart } from "@/lib/dates";
 import { calculateSummaries } from "@/lib/shifts";
 import { isApiError, requireApiUser } from "@/server/api";
 import {
@@ -17,24 +17,32 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const weekStart = searchParams.get("weekStart") ?? getSundayWeekStart();
-  const [employees, assignments, availabilityBlocks, swaps] = await Promise.all([
-    listEmployees(),
-    listAssignments(weekStart),
-    listAvailabilityBlocks(weekStart),
-    listSwapRequests()
-  ]);
-  const visibleAvailabilityBlocks =
-    user.role === "MANAGER"
-      ? availabilityBlocks
-      : availabilityBlocks.filter((block) => {
-          const employee = employees.find((item) => item.id === block.employeeId);
-          return employee?.userId === user.id;
-        });
+  const availabilityWeekStart =
+    searchParams.get("availabilityWeekStart") ?? getAvailabilityWeekStart();
+  const [employees, assignments, scheduleAvailabilityBlocks, availabilityBlocks, swaps] =
+    await Promise.all([
+      listEmployees(),
+      listAssignments(weekStart),
+      listAvailabilityBlocks(weekStart),
+      listAvailabilityBlocks(availabilityWeekStart),
+      listSwapRequests()
+    ]);
+  const ownEmployeeIds = new Set(
+    employees.filter((employee) => employee.userId === user.id).map((employee) => employee.id)
+  );
+  const visibleScheduleAvailabilityBlocks = user.role === "MANAGER"
+    ? scheduleAvailabilityBlocks
+    : scheduleAvailabilityBlocks.filter((block) => ownEmployeeIds.has(block.employeeId));
+  const visibleAvailabilityBlocks = user.role === "MANAGER"
+    ? availabilityBlocks
+    : availabilityBlocks.filter((block) => ownEmployeeIds.has(block.employeeId));
 
   return NextResponse.json({
     weekStart,
+    availabilityWeekStart,
     employees,
     assignments,
+    scheduleAvailabilityBlocks: visibleScheduleAvailabilityBlocks,
     availabilityBlocks: visibleAvailabilityBlocks,
     swaps,
     summaries: calculateSummaries(employees, assignments)

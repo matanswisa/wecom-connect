@@ -58,8 +58,9 @@ Public registration always creates an employee account. Manager accounts must be
 ## Scheduling Rules
 
 - The visible schedule is Sunday through Saturday, with a current date for every day.
+- The availability panel always targets the Sunday-through-Saturday week two weeks ahead, independently of the schedule week being viewed.
 - Employees can receive up to 6 shifts per week.
-- Unmarked availability is treated as available. Employees can mark a shift as preferred or unavailable and can set a full-day `Time Off` status.
+- Unmarked availability is treated as available. Employees can mark a shift as preferred or unavailable and can set a full-day vacation (`חופש`) status.
 - Availability conflicts and rest gaps of 8 hours or less require a manager warning confirmation but do not prevent an intentional assignment.
 - Weekly summaries show shift count and work hours per employee.
 - Every employee has a stable identifying color throughout the schedule.

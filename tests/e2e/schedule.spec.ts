@@ -23,6 +23,8 @@ test("manager sees a complete week and every employee constraint", async ({ page
   expect(await page.locator(".availability-row").count()).toBe(Math.min(employeeCount, 5));
   await expect(page.getByText(new RegExp(`מתוך ${employeeCount}`))).toBeVisible();
   await expect(page.getByText("מעוניין לעבוד", { exact: true })).toBeVisible();
+  await expect(page.getByText(/שבועיים קדימה/)).toBeVisible();
+  await expect(page.getByText("חופש", { exact: true }).first()).toBeVisible();
 
   await page.getByTitle("סינון עובדים").click();
   const filterDrawer = page.getByRole("dialog", { name: "סינון עובדים" });

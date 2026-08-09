@@ -57,8 +57,10 @@ import type {
 
 interface SchedulePayload {
   weekStart: string;
+  availabilityWeekStart: string;
   employees: Employee[];
   assignments: ShiftAssignment[];
+  scheduleAvailabilityBlocks: AvailabilityBlock[];
   availabilityBlocks: AvailabilityBlock[];
   swaps: ShiftSwapRequest[];
   summaries: EmployeeSummary[];
@@ -80,8 +82,10 @@ type NavigationSection = "schedule" | "employees" | "notifications" | "swaps";
 
 const EMPTY_SCHEDULE: SchedulePayload = {
   weekStart: "",
+  availabilityWeekStart: "",
   employees: [],
   assignments: [],
+  scheduleAvailabilityBlocks: [],
   availabilityBlocks: [],
   swaps: [],
   summaries: []
@@ -92,10 +96,12 @@ const ASSIGNMENT_UNDO_DURATION_MS = 6000;
 
 export function ScheduleDashboard({
   currentUser,
-  initialWeekStart
+  initialWeekStart,
+  initialAvailabilityWeekStart
 }: {
   currentUser: User;
   initialWeekStart: string;
+  initialAvailabilityWeekStart: string;
 }) {
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [schedule, setSchedule] = useState<SchedulePayload>(EMPTY_SCHEDULE);
@@ -114,6 +120,10 @@ export function ScheduleDashboard({
   const pendingAssignmentRemovalsRef = useRef(new Map<string, ShiftAssignment>());
 
   const days = useMemo(() => getScheduleDays(weekStart), [weekStart]);
+  const availabilityDays = useMemo(
+    () => getScheduleDays(initialAvailabilityWeekStart),
+    [initialAvailabilityWeekStart]
+  );
   const assignmentsByCell = useMemo(() => groupAssignments(schedule.assignments), [schedule.assignments]);
   const employeesById = useMemo(
     () => new Map(schedule.employees.map((employee) => [employee.id, employee])),
@@ -156,7 +166,7 @@ export function ScheduleDashboard({
     employees: availabilityCandidates,
     visibleEmployeeIds: availabilityVisibleIds,
     pageSize: AVAILABILITY_PAGE_SIZE,
-    resetKey: `${weekStart}:${searchQuery}`
+    resetKey: `${initialAvailabilityWeekStart}:${searchQuery}`
   });
   const openAvailabilityFilter = useCallback(() => setIsAvailabilityFilterOpen(true), []);
   const closeAvailabilityFilter = useCallback(() => setIsAvailabilityFilterOpen(false), []);
@@ -170,13 +180,15 @@ export function ScheduleDashboard({
 
   const loadSchedule = useCallback(async (nextWeekStart = weekStart) => {
     setIsLoading(true);
-    const response = await fetch(`/api/schedule?weekStart=${nextWeekStart}`);
+    const response = await fetch(
+      `/api/schedule?weekStart=${nextWeekStart}&availabilityWeekStart=${initialAvailabilityWeekStart}`
+    );
     if (response.ok) {
       const payload = (await response.json()) as SchedulePayload;
       setSchedule(hidePendingAssignmentRemovals(payload, pendingAssignmentRemovalsRef.current));
     }
     setIsLoading(false);
-  }, [weekStart]);
+  }, [initialAvailabilityWeekStart, weekStart]);
 
   const restoreAssignment = useCallback((assignment: ShiftAssignment) => {
     pendingAssignmentRemovalsRef.current.delete(assignment.id);
@@ -271,7 +283,7 @@ export function ScheduleDashboard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             employeeId,
-            weekStart,
+            weekStart: initialAvailabilityWeekStart,
             dayIndex,
             shiftType,
             status,
@@ -283,7 +295,7 @@ export function ScheduleDashboard({
     if (response.ok) {
       await loadSchedule();
     }
-  }, [loadSchedule, schedule.availabilityBlocks, weekStart]);
+  }, [initialAvailabilityWeekStart, loadSchedule, schedule.availabilityBlocks]);
 
   const toggleTimeOff = useCallback(async function toggleTimeOff(
     employeeId: string,
@@ -297,10 +309,10 @@ export function ScheduleDashboard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             employeeId,
-            weekStart,
+            weekStart: initialAvailabilityWeekStart,
             dayIndex,
             status: "TIME_OFF",
-            reason: "Time Off"
+            reason: "חופש"
           })
         });
 
@@ -308,7 +320,7 @@ export function ScheduleDashboard({
     if (response.ok) {
       await loadSchedule();
     }
-  }, [loadSchedule, schedule.availabilityBlocks, weekStart]);
+  }, [initialAvailabilityWeekStart, loadSchedule, schedule.availabilityBlocks]);
 
   async function createSwap(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -588,7 +600,7 @@ export function ScheduleDashboard({
                               )}
                               getAvailabilityHint={(employeeId) =>
                                 getAssignmentAvailabilityHint(
-                                  schedule.availabilityBlocks,
+                                  schedule.scheduleAvailabilityBlocks,
                                   employeeId,
                                   day.index,
                                   shiftType
@@ -631,7 +643,7 @@ export function ScheduleDashboard({
                               <span>
                                 <i className="employee-color-dot" aria-hidden="true" />
                                 {isUnavailableForShift(
-                                  schedule.availabilityBlocks,
+                                  schedule.scheduleAvailabilityBlocks,
                                   assignment.employeeId,
                                   day.index,
                                   shiftType
@@ -799,7 +811,8 @@ export function ScheduleDashboard({
 
           <AvailabilityPanel
             currentUser={currentUser}
-            days={days}
+            weekStart={initialAvailabilityWeekStart}
+            days={availabilityDays}
             employees={availabilityCandidates}
             visibleEmployees={availabilityView.visibleEmployees}
             selectedEmployeeIds={availabilityView.selection}

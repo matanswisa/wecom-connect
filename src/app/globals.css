@@ -1046,6 +1046,17 @@ select:hover {
   font-size: 17px;
 }
 
+.availability-title {
+  display: grid;
+  gap: 3px;
+}
+
+.availability-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .availability-legend {
   display: flex;
   align-items: center;

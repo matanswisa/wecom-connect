@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSundayWeekStart } from "@/lib/dates";
+import { getAvailabilityWeekStart, getSundayWeekStart } from "@/lib/dates";
 import { getCurrentUser } from "@/server/session";
 import { ScheduleDashboard } from "@/components/ScheduleDashboard";
 
@@ -10,5 +10,11 @@ export default function HomePage() {
     redirect("/login");
   }
 
-  return <ScheduleDashboard currentUser={user} initialWeekStart={getSundayWeekStart()} />;
+  return (
+    <ScheduleDashboard
+      currentUser={user}
+      initialWeekStart={getSundayWeekStart()}
+      initialAvailabilityWeekStart={getAvailabilityWeekStart()}
+    />
+  );
 }

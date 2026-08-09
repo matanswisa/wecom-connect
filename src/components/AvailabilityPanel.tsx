@@ -17,6 +17,7 @@ import type {
 
 interface AvailabilityPanelProps {
   currentUser: User;
+  weekStart: string;
   days: ScheduleDay[];
   employees: Employee[];
   visibleEmployees: Employee[];
@@ -44,6 +45,7 @@ interface AvailabilityPanelProps {
 
 export const AvailabilityPanel = memo(function AvailabilityPanel({
   currentUser,
+  weekStart,
   days,
   employees,
   visibleEmployees,
@@ -71,14 +73,19 @@ export const AvailabilityPanel = memo(function AvailabilityPanel({
       <div className="availability-heading">
         <div className="panel-title">
           <ShieldAlert size={18} />
-          <h2>אילוצים שבועיים</h2>
+          <div className="availability-title">
+            <h2>אילוצים שבועיים</h2>
+            <span>
+              לשבוע {formatHebrewDate(weekStart)}–{formatHebrewDate(days[6].date)} · שבועיים קדימה
+            </span>
+          </div>
         </div>
         <div className="availability-heading-actions">
           <div className="availability-legend">
             <span className="legend-morning">בוקר</span>
             <span className="legend-evening">ערב</span>
             <span className="legend-night">לילה</span>
-            <span className="legend-time-off">Time Off</span>
+            <span className="legend-time-off">חופש</span>
             <span className="legend-unavailable">לא זמין</span>
             <span className="legend-preferred">מעוניין לעבוד</span>
             <span className="legend-open">משמרת פתוחה</span>
@@ -206,7 +213,7 @@ const AvailabilityEmployeeRow = memo(function AvailabilityEmployeeRow({
               disabled={!canEdit}
               onClick={() => onToggleTimeOff(employee.id, day.index)}
             >
-              Time Off
+              חופש
             </button>
             {getShiftTypes().map((shiftType) => {
               const availability = findShiftAvailability(
