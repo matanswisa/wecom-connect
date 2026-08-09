@@ -244,6 +244,11 @@ export async function listAssignments(weekStart: string) {
   return rows.map(toAssignment);
 }
 
+export async function findAssignment(id: string) {
+  const [row] = await query<AssignmentRow>("SELECT * FROM shift_assignments WHERE id = $1", [id]);
+  return row ? toAssignment(row) : null;
+}
+
 export async function listAvailabilityBlocks(weekStart: string) {
   const rows = await query<AvailabilityRow>(
     "SELECT * FROM availability_blocks WHERE week_start = $1 ORDER BY day_index",

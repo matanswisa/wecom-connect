@@ -122,11 +122,31 @@ export function validateAssignment(
     });
   }
 
-  const restIssues = findRestIssues(input, ownAssignments);
-  errors.push(...restIssues.errors);
-  warnings.push(...restIssues.warnings);
+  warnings.push(...getRestWarnings(input, ownAssignments));
 
   return { errors, warnings };
+}
+
+export function getRestWarnings(
+  input: AssignmentInput,
+  existingAssignments: ShiftAssignment[]
+): AssignmentIssue[] {
+  const ownAssignments = existingAssignments.filter(
+    (assignment) => assignment.employeeId === input.employeeId
+  );
+  const candidate = getShiftWindow(input.weekStart, input.dayIndex, input.shiftType);
+  const warnings: AssignmentIssue[] = [];
+
+  for (const assignment of ownAssignments) {
+    const existing = getShiftWindow(assignment.weekStart, assignment.dayIndex, assignment.shiftType);
+    const gapAfterExisting = hoursBetween(existing.ends, candidate.starts);
+    const gapBeforeExisting = hoursBetween(candidate.ends, existing.starts);
+
+    addRestWarning(gapAfterExisting, warnings);
+    addRestWarning(gapBeforeExisting, warnings);
+  }
+
+  return uniqueIssues(warnings);
 }
 
 function isBlocked(input: AssignmentInput, availabilityBlocks: AvailabilityBlock[]): boolean {
@@ -155,23 +175,6 @@ function isBlocked(input: AssignmentInput, availabilityBlocks: AvailabilityBlock
       const blockedWindow = getTimeRange(input.weekStart, input.dayIndex, block.startsAt, block.endsAt);
       return candidate.starts < blockedWindow.ends && candidate.ends > blockedWindow.starts;
     });
-}
-
-function findRestIssues(input: AssignmentInput, assignments: ShiftAssignment[]) {
-  const candidate = getShiftWindow(input.weekStart, input.dayIndex, input.shiftType);
-  const errors: AssignmentIssue[] = [];
-  const warnings: AssignmentIssue[] = [];
-
-  for (const assignment of assignments) {
-    const existing = getShiftWindow(assignment.weekStart, assignment.dayIndex, assignment.shiftType);
-    const gapAfterExisting = hoursBetween(existing.ends, candidate.starts);
-    const gapBeforeExisting = hoursBetween(candidate.ends, existing.starts);
-
-    addRestWarning(gapAfterExisting, warnings);
-    addRestWarning(gapBeforeExisting, warnings);
-  }
-
-  return { errors: uniqueIssues(errors), warnings: uniqueIssues(warnings) };
 }
 
 function addRestWarning(gapHours: number, warnings: AssignmentIssue[]) {

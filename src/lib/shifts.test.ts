@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSummaries, validateAssignment } from "./shifts";
+import { calculateSummaries, getRestWarnings, validateAssignment } from "./shifts";
 import type { AvailabilityBlock, Employee, ShiftAssignment } from "./types";
 
 const employee: Employee = {
@@ -73,6 +73,28 @@ describe("shift rules", () => {
 
     expect(validation.errors).toHaveLength(0);
     expect(validation.warnings).toContainEqual(
+      expect.objectContaining({ code: "EIGHT_EIGHT_REST" })
+    );
+  });
+
+  it("detects back-to-back rest warnings for a proposed shift swap", () => {
+    const warnings = getRestWarnings(
+      { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 0, shiftType: "EVENING" },
+      [assignment("1", 0, "MORNING")]
+    );
+
+    expect(warnings).toContainEqual(
+      expect.objectContaining({ code: "INSUFFICIENT_REST" })
+    );
+  });
+
+  it("detects an 8-8 rest warning for a proposed shift swap", () => {
+    const warnings = getRestWarnings(
+      { employeeId: employee.id, weekStart: "2026-07-19", dayIndex: 1, shiftType: "EVENING" },
+      [assignment("1", 0, "NIGHT")]
+    );
+
+    expect(warnings).toContainEqual(
       expect.objectContaining({ code: "EIGHT_EIGHT_REST" })
     );
   });

@@ -73,6 +73,17 @@ interface PendingAssignment {
   warnings: string[];
 }
 
+interface SwapSubmission {
+  requesterAssignmentId: string;
+  targetEmployeeId: string;
+  targetAssignmentId?: string;
+}
+
+interface PendingSwap {
+  submission: SwapSubmission;
+  warnings: string[];
+}
+
 interface AssignmentPicker {
   cellKey: string;
   employeeId: string;
@@ -107,6 +118,7 @@ export function ScheduleDashboard({
   const [schedule, setSchedule] = useState<SchedulePayload>(EMPTY_SCHEDULE);
   const [assignmentPicker, setAssignmentPicker] = useState<AssignmentPicker | null>(null);
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
+  const [pendingSwap, setPendingSwap] = useState<PendingSwap | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<NavigationSection>("schedule");
   const [isAvailabilityFilterOpen, setIsAvailabilityFilterOpen] = useState(false);
@@ -117,6 +129,7 @@ export function ScheduleDashboard({
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const scheduleTableRef = useRef<HTMLDivElement>(null);
+  const swapFormRef = useRef<HTMLFormElement>(null);
   const pendingAssignmentRemovalsRef = useRef(new Map<string, ShiftAssignment>());
 
   const days = useMemo(() => getScheduleDays(weekStart), [weekStart]);
@@ -325,18 +338,41 @@ export function ScheduleDashboard({
   async function createSwap(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    const submission: SwapSubmission = {
+      requesterAssignmentId: String(formData.get("requesterAssignmentId") ?? ""),
+      targetEmployeeId: String(formData.get("targetEmployeeId") ?? "")
+    };
+    await submitSwap(submission);
+  }
+
+  async function submitSwap(submission: SwapSubmission, acknowledgeWarnings = false) {
     const response = await fetch("/api/swaps", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(formData.entries()))
+      body: JSON.stringify({ ...submission, acknowledgeWarnings })
     });
 
     const body = await response.json();
-    setToast(response.ok ? "בקשת ההחלפה נשלחה." : body.error ?? "בקשת ההחלפה נכשלה.");
-    if (response.ok) {
-      event.currentTarget.reset();
-      await loadSchedule();
+    if (!response.ok) {
+      const warnings = (body.details?.warnings ?? []).map(
+        (warning: { message: string }) => warning.message
+      );
+      if (warnings.length > 0 && !(body.details?.errors?.length > 0)) {
+        setPendingSwap({ submission, warnings });
+        return;
+      }
+      setToast(body.details?.errors?.[0]?.message ?? body.error ?? "בקשת ההחלפה נכשלה.");
+      return;
     }
+
+    setPendingSwap(null);
+    setToast(
+      acknowledgeWarnings
+        ? "בקשת ההחלפה נשלחה לאחר אישור אזהרת 8–8."
+        : "בקשת ההחלפה נשלחה."
+    );
+    swapFormRef.current?.reset();
+    await loadSchedule();
   }
 
   async function decideSwap(id: string, action: string) {
@@ -750,7 +786,7 @@ export function ScheduleDashboard({
                   <Repeat2 size={18} />
                   <h2>החלפות</h2>
                 </div>
-                <form className="compact-form" onSubmit={createSwap}>
+                <form className="compact-form" ref={swapFormRef} onSubmit={createSwap}>
                   <select name="requesterAssignmentId" required defaultValue="">
                     <option value="" disabled>
                       משמרת מקור
@@ -890,6 +926,36 @@ export function ScheduleDashboard({
                 }
               >
                 שיבוץ בכל זאת
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {pendingSwap ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="warning-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="swap-warning-title"
+          >
+            <div className="warning-dialog-icon"><AlertTriangle size={22} /></div>
+            <div>
+              <h2 id="swap-warning-title">אזהרת משמרות רצופות (8–8)</h2>
+              <p className="dialog-copy">
+                ההחלפה עלולה ליצור משמרת אחרי משמרת או מנוחה של 8 שעות בלבד.
+              </p>
+              <ul>
+                {pendingSwap.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </div>
+            <div className="warning-dialog-actions">
+              <button className="soft-action" onClick={() => setPendingSwap(null)}>ביטול</button>
+              <button
+                className="warning-action"
+                onClick={() => submitSwap(pendingSwap.submission, true)}
+              >
+                שלח בכל זאת
               </button>
             </div>
           </section>
