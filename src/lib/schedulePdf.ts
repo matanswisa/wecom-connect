@@ -6,7 +6,7 @@ export async function createSchedulePdf(element: HTMLElement) {
   // Ensure the exported image uses the same self-hosted font as the live interface.
   await document.fonts?.ready;
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas"),
+    import("html2canvas-pro"),
     import("jspdf")
   ]);
   const width = element.scrollWidth;
