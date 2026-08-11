@@ -1298,6 +1298,7 @@ function swapStatusLabel(swap: ShiftSwapRequest) {
   const labels = {
     DECLINED_BY_EMPLOYEE: "נדחה על ידי עובד",
     DECLINED_BY_MANAGER: "נדחה על ידי מנהלת",
+    SUPERSEDED: "נסגרה כי השיבוץ כבר עודכן",
     APPROVED: "אושר"
   };
   if (swap.status === "PENDING_EMPLOYEE") {
@@ -1317,6 +1318,9 @@ function swapDecisionMessage(swap: ShiftSwapRequest) {
   }
   if (swap.status === "DECLINED_BY_EMPLOYEE" || swap.status === "DECLINED_BY_MANAGER") {
     return "ההחלפה נדחתה והועברה להיסטוריה.";
+  }
+  if (swap.status === "SUPERSEDED") {
+    return "הבקשה הכפולה נסגרה כי השיבוץ כבר עודכן.";
   }
   return swapStatusLabel(swap);
 }

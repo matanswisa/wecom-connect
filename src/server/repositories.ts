@@ -453,26 +453,33 @@ export async function createSwapRequest(input: {
   targetEmployeeId: string;
   targetAssignmentId: string | null;
 }) {
-  const [swap] = await query<SwapRow>(
-    `INSERT INTO shift_swap_requests
-      (requester_assignment_id, target_employee_id, target_assignment_id,
-       requester_employee_id_snapshot, requester_employee_name_snapshot,
-       target_employee_name_snapshot, week_start_snapshot, day_index_snapshot,
-       shift_type_snapshot, target_day_index_snapshot, target_shift_type_snapshot)
-     SELECT requester_assignment.id, target.id, target_assignment.id,
-            requester_assignment.employee_id, requester.name, target.name,
-            requester_assignment.week_start, requester_assignment.day_index,
-            requester_assignment.shift_type, target_assignment.day_index,
-            target_assignment.shift_type
-     FROM shift_assignments requester_assignment
-     JOIN employees requester ON requester.id = requester_assignment.employee_id
-     JOIN employees target ON target.id = $2
-     LEFT JOIN shift_assignments target_assignment ON target_assignment.id = $3
-     WHERE requester_assignment.id = $1
-     RETURNING *`,
-    [input.requesterAssignmentId, input.targetEmployeeId, input.targetAssignmentId]
-  );
-  return toSwap(swap);
+  try {
+    const [swap] = await query<SwapRow>(
+      `INSERT INTO shift_swap_requests
+        (requester_assignment_id, target_employee_id, target_assignment_id,
+         requester_employee_id_snapshot, requester_employee_name_snapshot,
+         target_employee_name_snapshot, week_start_snapshot, day_index_snapshot,
+         shift_type_snapshot, target_day_index_snapshot, target_shift_type_snapshot)
+       SELECT requester_assignment.id, target.id, target_assignment.id,
+              requester_assignment.employee_id, requester.name, target.name,
+              requester_assignment.week_start, requester_assignment.day_index,
+              requester_assignment.shift_type, target_assignment.day_index,
+              target_assignment.shift_type
+       FROM shift_assignments requester_assignment
+       JOIN employees requester ON requester.id = requester_assignment.employee_id
+       JOIN employees target ON target.id = $2
+       LEFT JOIN shift_assignments target_assignment ON target_assignment.id = $3
+       WHERE requester_assignment.id = $1
+       RETURNING *`,
+      [input.requesterAssignmentId, input.targetEmployeeId, input.targetAssignmentId]
+    );
+    return swap ? toSwap(swap) : null;
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function decideSwapRequest(id: string, action: SwapDecisionAction) {
@@ -528,6 +535,16 @@ export async function decideSwapRequest(id: string, action: SwapDecisionAction) 
        RETURNING *`,
       [id, status]
     );
+    if (status === "APPROVED" && current.requester_assignment_id) {
+      await client.query(
+        `UPDATE shift_swap_requests
+         SET status = 'SUPERSEDED'
+         WHERE id <> $1
+           AND requester_assignment_id = $2
+           AND status IN ('PENDING_EMPLOYEE', 'PENDING_MANAGER')`,
+        [id, current.requester_assignment_id]
+      );
+    }
     await client.query("COMMIT");
     return toSwap(updatedResult.rows[0]);
   } catch (error) {
@@ -562,12 +579,22 @@ async function applyApprovedSwap(client: import("pg").PoolClient, swap: SwapRow)
   const targetAssignment = swap.target_assignment_id
     ? assignmentsResult.rows.find((assignment) => assignment.id === swap.target_assignment_id)
     : null;
+  const requesterEmployeeId = swap.requester_employee_id_snapshot ?? swap.requester_employee_id;
+
+  if (!requesterEmployeeId || !requesterAssignment) {
+    return false;
+  }
+
+  const isAlreadyApplied = targetAssignment
+    ? requesterAssignment.employee_id === swap.target_employee_id &&
+      targetAssignment.employee_id === requesterEmployeeId
+    : requesterAssignment.employee_id === swap.target_employee_id;
+  if (isAlreadyApplied) {
+    return true;
+  }
 
   if (
-    !requesterAssignment ||
-    ((swap.requester_employee_id_snapshot ?? swap.requester_employee_id) &&
-      requesterAssignment.employee_id !==
-        (swap.requester_employee_id_snapshot ?? swap.requester_employee_id)) ||
+    requesterAssignment.employee_id !== requesterEmployeeId ||
     (swap.target_assignment_id &&
       (!targetAssignment || targetAssignment.employee_id !== swap.target_employee_id))
   ) {

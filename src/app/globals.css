@@ -1148,6 +1148,11 @@ select:hover {
   color: #aa2630;
 }
 
+.swap-status.superseded {
+  background: #eef2f6;
+  color: #536174;
+}
+
 .empty-state {
   color: var(--muted);
   margin: 0;
@@ -2152,6 +2157,11 @@ html[data-theme="dark"] {
 [data-theme="dark"] .swap-status.declined_by_manager {
   background: #382126;
   color: #f09aa0;
+}
+
+[data-theme="dark"] .swap-status.superseded {
+  background: #29323f;
+  color: #c2cad5;
 }
 
 [data-theme="dark"] .time-off-toggle {

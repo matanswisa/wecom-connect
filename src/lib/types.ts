@@ -9,6 +9,7 @@ export type SwapStatus =
   | "DECLINED_BY_EMPLOYEE"
   | "PENDING_MANAGER"
   | "DECLINED_BY_MANAGER"
+  | "SUPERSEDED"
   | "APPROVED";
 
 export interface User {

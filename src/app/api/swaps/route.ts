@@ -97,6 +97,9 @@ export async function POST(request: Request) {
     targetEmployeeId,
     targetAssignmentId
   });
+  if (!swap) {
+    return jsonError("כבר קיימת בקשת החלפה פעילה למשמרת הזו.", 409);
+  }
 
   return NextResponse.json({ swap, validation: { errors: [], warnings } }, { status: 201 });
 }
