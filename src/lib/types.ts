@@ -64,6 +64,8 @@ export interface ShiftSwapRequest {
   targetDayIndex?: number | null;
   targetShiftType?: ShiftType | null;
   status: SwapStatus;
+  employeeDecidedAt: string | null;
+  managerDecidedAt: string | null;
   createdAt: string;
 }
 

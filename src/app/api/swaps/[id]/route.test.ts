@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireApiUser: vi.fn(),
   findSwapRequest: vi.fn(),
   listEmployees: vi.fn(),
-  updateSwapStatus: vi.fn()
+  decideSwapRequest: vi.fn()
 }));
 
 vi.mock("@/server/api", async () => {
@@ -19,7 +19,7 @@ vi.mock("@/server/api", async () => {
 vi.mock("@/server/repositories", () => ({
   findSwapRequest: mocks.findSwapRequest,
   listEmployees: mocks.listEmployees,
-  updateSwapStatus: mocks.updateSwapStatus
+  decideSwapRequest: mocks.decideSwapRequest
 }));
 
 import { PATCH } from "./route";
@@ -32,6 +32,8 @@ const pendingEmployeeSwap = {
   targetEmployeeId: "employee-2",
   targetAssignmentId: null,
   status: "PENDING_EMPLOYEE",
+  employeeDecidedAt: null,
+  managerDecidedAt: null,
   createdAt: "2026-08-11T00:00:00.000Z"
 };
 
@@ -53,9 +55,10 @@ describe("swap approval stages", () => {
       id: pendingEmployeeSwap.targetEmployeeId,
       userId: targetUser.id
     }]);
-    mocks.updateSwapStatus.mockResolvedValue({
+    mocks.decideSwapRequest.mockResolvedValue({
       ...pendingEmployeeSwap,
-      status: "PENDING_MANAGER"
+      status: "PENDING_MANAGER",
+      employeeDecidedAt: "2026-08-11T08:00:00.000Z"
     });
 
     const response = await PATCH(actionRequest("approve_employee"), {
@@ -63,18 +66,19 @@ describe("swap approval stages", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(mocks.updateSwapStatus).toHaveBeenCalledWith(
+    expect(mocks.decideSwapRequest).toHaveBeenCalledWith(
       pendingEmployeeSwap.id,
-      "PENDING_MANAGER",
-      "PENDING_EMPLOYEE"
+      "approve_employee"
     );
   });
 
-  it("allows admin to approve a request awaiting manager review", async () => {
-    const pendingManagerSwap = { ...pendingEmployeeSwap, status: "PENDING_MANAGER" };
+  it("allows admin to approve before the target employee", async () => {
     mocks.requireApiUser.mockResolvedValue(manager);
-    mocks.findSwapRequest.mockResolvedValue(pendingManagerSwap);
-    mocks.updateSwapStatus.mockResolvedValue({ ...pendingManagerSwap, status: "APPROVED" });
+    mocks.findSwapRequest.mockResolvedValue(pendingEmployeeSwap);
+    mocks.decideSwapRequest.mockResolvedValue({
+      ...pendingEmployeeSwap,
+      managerDecidedAt: "2026-08-11T08:00:00.000Z"
+    });
 
     const response = await PATCH(actionRequest("approve_manager"), {
       params: Promise.resolve({ id: pendingEmployeeSwap.id })
@@ -82,10 +86,45 @@ describe("swap approval stages", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.requireApiUser).toHaveBeenCalledWith(["MANAGER"]);
-    expect(mocks.updateSwapStatus).toHaveBeenCalledWith(
+    expect(mocks.decideSwapRequest).toHaveBeenCalledWith(
       pendingEmployeeSwap.id,
-      "APPROVED",
-      "PENDING_MANAGER"
+      "approve_manager"
     );
+  });
+
+  it("allows admin to decline before the target employee", async () => {
+    mocks.requireApiUser.mockResolvedValue(manager);
+    mocks.findSwapRequest.mockResolvedValue(pendingEmployeeSwap);
+    mocks.decideSwapRequest.mockResolvedValue({
+      ...pendingEmployeeSwap,
+      status: "DECLINED_BY_MANAGER",
+      managerDecidedAt: "2026-08-11T08:00:00.000Z"
+    });
+
+    const response = await PATCH(actionRequest("decline_manager"), {
+      params: Promise.resolve({ id: pendingEmployeeSwap.id })
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.decideSwapRequest).toHaveBeenCalledWith(
+      pendingEmployeeSwap.id,
+      "decline_manager"
+    );
+  });
+
+  it("rejects an employee who is not the requested target", async () => {
+    mocks.requireApiUser.mockResolvedValue(targetUser);
+    mocks.findSwapRequest.mockResolvedValue(pendingEmployeeSwap);
+    mocks.listEmployees.mockResolvedValue([{
+      id: pendingEmployeeSwap.targetEmployeeId,
+      userId: "another-user"
+    }]);
+
+    const response = await PATCH(actionRequest("approve_employee"), {
+      params: Promise.resolve({ id: pendingEmployeeSwap.id })
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.decideSwapRequest).not.toHaveBeenCalled();
   });
 });

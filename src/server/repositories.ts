@@ -54,6 +54,7 @@ interface SwapRow {
   id: string;
   requester_assignment_id: string | null;
   requester_employee_id?: string;
+  requester_employee_id_snapshot?: string;
   requester_employee_name?: string;
   target_employee_id: string;
   target_employee_name?: string;
@@ -64,8 +65,16 @@ interface SwapRow {
   target_day_index?: number | null;
   target_shift_type?: ShiftType | null;
   status: ShiftSwapRequest["status"];
+  employee_decided_at: string | null;
+  manager_decided_at: string | null;
   created_at: string;
 }
+
+export type SwapDecisionAction =
+  | "approve_employee"
+  | "decline_employee"
+  | "approve_manager"
+  | "decline_manager";
 
 export async function findUserByEmail(email: string) {
   const [user] = await query<UserRow>("SELECT * FROM users WHERE email = $1", [email]);
@@ -466,23 +475,116 @@ export async function createSwapRequest(input: {
   return toSwap(swap);
 }
 
-export async function updateSwapStatus(
-  id: string,
-  status: ShiftSwapRequest["status"],
-  expectedStatus: ShiftSwapRequest["status"]
-) {
-  const decidedColumn =
-    status === "PENDING_MANAGER" || status === "DECLINED_BY_EMPLOYEE"
-      ? "employee_decided_at"
-      : "manager_decided_at";
-  const [swap] = await query<SwapRow>(
-    `UPDATE shift_swap_requests
-     SET status = $2, ${decidedColumn} = now()
-     WHERE id = $1 AND status = $3
-     RETURNING *`,
-    [id, status, expectedStatus]
+export async function decideSwapRequest(id: string, action: SwapDecisionAction) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const swapResult = await client.query<SwapRow>(
+      "SELECT * FROM shift_swap_requests WHERE id = $1 FOR UPDATE",
+      [id]
+    );
+    const current = swapResult.rows[0];
+    if (!current || !isActiveSwapStatus(current.status)) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const isEmployeeAction = action.endsWith("_employee");
+    const isApproval = action.startsWith("approve_");
+    const alreadyDecided = isEmployeeAction
+      ? current.employee_decided_at !== null
+      : current.manager_decided_at !== null;
+    if (alreadyDecided || (isEmployeeAction && current.status !== "PENDING_EMPLOYEE")) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const otherApproved = isEmployeeAction
+      ? current.manager_decided_at !== null
+      : current.employee_decided_at !== null || current.status === "PENDING_MANAGER";
+    const status: ShiftSwapRequest["status"] = isApproval
+      ? otherApproved
+        ? "APPROVED"
+        : isEmployeeAction
+          ? "PENDING_MANAGER"
+          : "PENDING_EMPLOYEE"
+      : isEmployeeAction
+        ? "DECLINED_BY_EMPLOYEE"
+        : "DECLINED_BY_MANAGER";
+    const decidedColumn = isEmployeeAction ? "employee_decided_at" : "manager_decided_at";
+
+    if (status === "APPROVED") {
+      const applied = await applyApprovedSwap(client, current);
+      if (!applied) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+    }
+
+    const updatedResult = await client.query<SwapRow>(
+      `UPDATE shift_swap_requests
+       SET status = $2, ${decidedColumn} = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id, status]
+    );
+    await client.query("COMMIT");
+    return toSwap(updatedResult.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function isActiveSwapStatus(status: ShiftSwapRequest["status"]) {
+  return status === "PENDING_EMPLOYEE" || status === "PENDING_MANAGER";
+}
+
+async function applyApprovedSwap(client: import("pg").PoolClient, swap: SwapRow) {
+  if (!swap.requester_assignment_id) {
+    return false;
+  }
+
+  const assignmentIds = [swap.requester_assignment_id, swap.target_assignment_id].filter(
+    (assignmentId): assignmentId is string => assignmentId !== null
   );
-  return swap ? toSwap(swap) : null;
+  const assignmentsResult = await client.query<AssignmentRow>(
+    `SELECT * FROM shift_assignments
+     WHERE id = ANY($1::uuid[])
+     FOR UPDATE`,
+    [assignmentIds]
+  );
+  const requesterAssignment = assignmentsResult.rows.find(
+    (assignment) => assignment.id === swap.requester_assignment_id
+  );
+  const targetAssignment = swap.target_assignment_id
+    ? assignmentsResult.rows.find((assignment) => assignment.id === swap.target_assignment_id)
+    : null;
+
+  if (
+    !requesterAssignment ||
+    ((swap.requester_employee_id_snapshot ?? swap.requester_employee_id) &&
+      requesterAssignment.employee_id !==
+        (swap.requester_employee_id_snapshot ?? swap.requester_employee_id)) ||
+    (swap.target_assignment_id &&
+      (!targetAssignment || targetAssignment.employee_id !== swap.target_employee_id))
+  ) {
+    return false;
+  }
+
+  await client.query(
+    "UPDATE shift_assignments SET employee_id = $2 WHERE id = $1",
+    [requesterAssignment.id, swap.target_employee_id]
+  );
+  if (targetAssignment) {
+    await client.query(
+      "UPDATE shift_assignments SET employee_id = $2 WHERE id = $1",
+      [targetAssignment.id, requesterAssignment.employee_id]
+    );
+  }
+  return true;
 }
 
 export function toUser(row: UserRow): User {
@@ -540,7 +642,7 @@ function toSwap(row: SwapRow): ShiftSwapRequest {
   return {
     id: row.id,
     requesterAssignmentId: row.requester_assignment_id,
-    requesterEmployeeId: row.requester_employee_id,
+    requesterEmployeeId: row.requester_employee_id ?? row.requester_employee_id_snapshot,
     requesterEmployeeName: row.requester_employee_name,
     targetEmployeeId: row.target_employee_id,
     targetEmployeeName: row.target_employee_name,
@@ -551,6 +653,8 @@ function toSwap(row: SwapRow): ShiftSwapRequest {
     targetDayIndex: row.target_day_index,
     targetShiftType: row.target_shift_type,
     status: row.status,
+    employeeDecidedAt: row.employee_decided_at,
+    managerDecidedAt: row.manager_decided_at,
     createdAt: row.created_at
   };
 }

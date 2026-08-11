@@ -61,7 +61,7 @@ the first manager is bootstrapped once with the production-safe admin script.
 - Every shift can contain only one employee. Replacing an occupied shift requires an explicit manager confirmation.
 - Assigned names are bold and colored by shift: morning green, evening yellow, and night red.
 - Managers can export a UTF-8 CSV table containing employee, day, date, shift, time, and weekly totals.
-- Swap requests require employee approval first and manager approval after that.
+- Swap requests can be reviewed by the target employee and manager in either order. A rejection closes the request immediately; after both approve, the assignment is applied automatically.
 
 ## Security
 

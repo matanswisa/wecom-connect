@@ -434,7 +434,11 @@ export function ScheduleDashboard({
       body: JSON.stringify({ action })
     });
     const body = await response.json();
-    setToast(response.ok ? "סטטוס ההחלפה עודכן." : body.error ?? "עדכון ההחלפה נכשל.");
+    setToast(
+      response.ok
+        ? swapDecisionMessage(body.swap as ShiftSwapRequest)
+        : body.error ?? "עדכון ההחלפה נכשל."
+    );
     await loadSchedule();
   }
 
@@ -1129,8 +1133,14 @@ function SwapRequestList({
     <div className="swap-list">
       {swaps.map((swap) => {
         const employeeCanDecide =
-          swap.status === "PENDING_EMPLOYEE" && swap.targetEmployeeId === ownEmployeeId;
-        const managerCanDecide = swap.status === "PENDING_MANAGER" && isManager;
+          swap.status === "PENDING_EMPLOYEE" &&
+          swap.targetEmployeeId === ownEmployeeId &&
+          !swap.employeeDecidedAt;
+        const managerCanDecide =
+          isManager &&
+          (swap.status === "PENDING_EMPLOYEE" || swap.status === "PENDING_MANAGER") &&
+          !swap.managerDecidedAt;
+        const decisionActor = managerCanDecide ? "manager" : employeeCanDecide ? "employee" : null;
         return (
           <article className="swap-item" key={swap.id}>
             <div className="swap-copy">
@@ -1144,32 +1154,34 @@ function SwapRequestList({
             </div>
             <div className="swap-meta">
               <span className={`swap-status ${swap.status.toLocaleLowerCase()}`}>
-                {swapStatusLabel(swap.status)}
+                {swapStatusLabel(swap)}
               </span>
-              {employeeCanDecide || managerCanDecide ? (
+              {decisionActor ? (
                 <div className="swap-actions">
                   <button
                     type="button"
-                    title="אישור החלפה"
-                    aria-label="אישור החלפה"
+                    title={decisionActor === "manager" ? "אישור מנהלת" : "אישור עובד"}
+                    aria-label={decisionActor === "manager" ? "אישור מנהלת להחלפה" : "אישור עובד להחלפה"}
                     onClick={() => onDecision(
                       swap.id,
-                      employeeCanDecide ? "approve_employee" : "approve_manager"
+                      `approve_${decisionActor}`
                     )}
                   >
                     <Check size={14} />
+                    <span>{decisionActor === "manager" ? "אישור מנהלת" : "אישור עובד"}</span>
                   </button>
                   <button
                     type="button"
                     className="decline"
-                    title="דחיית החלפה"
-                    aria-label="דחיית החלפה"
+                    title={decisionActor === "manager" ? "סירוב מנהלת" : "סירוב עובד"}
+                    aria-label={decisionActor === "manager" ? "סירוב מנהלת להחלפה" : "סירוב עובד להחלפה"}
                     onClick={() => onDecision(
                       swap.id,
-                      employeeCanDecide ? "decline_employee" : "decline_manager"
+                      `decline_${decisionActor}`
                     )}
                   >
                     <X size={14} />
+                    <span>{decisionActor === "manager" ? "סירוב מנהלת" : "סירוב עובד"}</span>
                   </button>
                 </div>
               ) : null}
@@ -1282,15 +1294,31 @@ function shiftColorStyle(shiftType: ShiftType): CSSProperties {
   } as CSSProperties;
 }
 
-function swapStatusLabel(status: ShiftSwapRequest["status"]) {
+function swapStatusLabel(swap: ShiftSwapRequest) {
   const labels = {
-    PENDING_EMPLOYEE: "ממתין לאישור עובד",
     DECLINED_BY_EMPLOYEE: "נדחה על ידי עובד",
-    PENDING_MANAGER: "ממתין לאישור מנהלת",
     DECLINED_BY_MANAGER: "נדחה על ידי מנהלת",
     APPROVED: "אושר"
   };
-  return labels[status];
+  if (swap.status === "PENDING_EMPLOYEE") {
+    return swap.managerDecidedAt
+      ? "המנהלת אישרה · ממתין לאישור עובד"
+      : "ממתין לאישור עובד ולמנהלת";
+  }
+  if (swap.status === "PENDING_MANAGER") {
+    return "העובד אישר · ממתין לאישור מנהלת";
+  }
+  return labels[swap.status];
+}
+
+function swapDecisionMessage(swap: ShiftSwapRequest) {
+  if (swap.status === "APPROVED") {
+    return "ההחלפה אושרה והשיבוץ בלוח עודכן אוטומטית.";
+  }
+  if (swap.status === "DECLINED_BY_EMPLOYEE" || swap.status === "DECLINED_BY_MANAGER") {
+    return "ההחלפה נדחתה והועברה להיסטוריה.";
+  }
+  return swapStatusLabel(swap);
 }
 
 function swapShiftLabel(swap: ShiftSwapRequest) {
