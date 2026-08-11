@@ -115,6 +115,7 @@ const EMPTY_SCHEDULE: SchedulePayload = {
 
 const AVAILABILITY_PAGE_SIZE = 5;
 const ASSIGNMENT_UNDO_DURATION_MS = 6000;
+const LIVE_SCHEDULE_REFRESH_MS = 10_000;
 
 export function ScheduleDashboard({
   currentUser,
@@ -211,7 +212,8 @@ export function ScheduleDashboard({
   const loadSchedule = useCallback(async (nextWeekStart = weekStart) => {
     setIsLoading(true);
     const response = await fetch(
-      `/api/schedule?weekStart=${nextWeekStart}&availabilityWeekStart=${initialAvailabilityWeekStart}`
+      `/api/schedule?weekStart=${nextWeekStart}&availabilityWeekStart=${initialAvailabilityWeekStart}`,
+      { cache: "no-store" }
     );
     if (response.ok) {
       const payload = (await response.json()) as SchedulePayload;
@@ -247,6 +249,23 @@ export function ScheduleDashboard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedule(weekStart);
   }, [weekStart, loadSchedule]);
+
+  useEffect(() => {
+    const refreshVisibleSchedule = () => {
+      if (document.visibilityState === "visible") {
+        void loadSchedule(weekStart);
+      }
+    };
+    const intervalId = window.setInterval(refreshVisibleSchedule, LIVE_SCHEDULE_REFRESH_MS);
+    window.addEventListener("focus", refreshVisibleSchedule);
+    document.addEventListener("visibilitychange", refreshVisibleSchedule);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshVisibleSchedule);
+      document.removeEventListener("visibilitychange", refreshVisibleSchedule);
+    };
+  }, [loadSchedule, weekStart]);
 
   async function assignShift(
     employeeId: string,
