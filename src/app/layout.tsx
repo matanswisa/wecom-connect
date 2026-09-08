@@ -11,7 +11,10 @@ const heebo = Heebo({
 
 export const metadata: Metadata = {
   title: "Wecomconnect",
-  description: "Shift scheduling for three-shift teams"
+  description: "Shift scheduling for three-shift teams",
+  icons: {
+    icon: "/wecom-logo.svg"
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
