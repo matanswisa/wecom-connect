@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -11,6 +12,8 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  FileText,
+  LayoutDashboard,
   LogOut,
   MessageSquare,
   Pencil,
@@ -23,11 +26,13 @@ import {
   UserRound,
   UserPlus,
   UsersRound,
+  Wand2,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AvailabilityPanel } from "./AvailabilityPanel";
 import { AssignmentUndoToast } from "./AssignmentUndoToast";
+import { CurrentShiftBanner } from "./CurrentShiftBanner";
 import { EmployeeEditorDialog, type EmployeeEditor } from "./EmployeeEditorDialog";
 import { ShiftWorkerPicker } from "./ShiftWorkerPicker";
 import { ThemeToggle } from "./ThemeToggle";
@@ -142,6 +147,7 @@ export function ScheduleDashboard({
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isGeneratingSchedule, setIsGeneratingSchedule] = useState(false);
   const scheduleTableRef = useRef<HTMLDivElement>(null);
   const swapFormRef = useRef<HTMLFormElement>(null);
   const pendingAssignmentRemovalsRef = useRef(new Map<string, ShiftAssignment>());
@@ -314,6 +320,40 @@ export function ScheduleDashboard({
           ? "השיבוץ נשמר לאחר אישור האזהרה."
           : "השיבוץ נשמר."
     );
+    await loadSchedule();
+  }
+
+  async function generateSchedule() {
+    if (isGeneratingSchedule) {
+      return;
+    }
+    setIsGeneratingSchedule(true);
+    const response = await fetch("/api/schedule/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekStart })
+    });
+    const body = await response.json();
+    setIsGeneratingSchedule(false);
+
+    if (!response.ok) {
+      setToast(body.error ?? "יצירת הסידור האוטומטי נכשלה.");
+      return;
+    }
+
+    const createdCount = (body.created ?? []).length;
+    const relaxedCount = (body.relaxedRest ?? []).length;
+    const unfilledCount = (body.unfilled ?? []).length;
+    const messageParts = [
+      createdCount > 0 ? `נוצרו ${createdCount} שיבוצים אוטומטית.` : "לא נמצאו משמרות פנויות לשיבוץ."
+    ];
+    if (relaxedCount > 0) {
+      messageParts.push(`ב-${relaxedCount} מהן הוקל כלל המנוחה בגלל מחסור בעובדים זמינים.`);
+    }
+    if (unfilledCount > 0) {
+      messageParts.push(`${unfilledCount} משמרות נשארו פנויות ודורשות שיבוץ ידני.`);
+    }
+    setToast(messageParts.join(" "));
     await loadSchedule();
   }
 
@@ -551,6 +591,9 @@ export function ScheduleDashboard({
         <div className="rail-logo">
           <Image src="/wecom-logo.svg" alt="wecom" width={92} height={42} priority />
         </div>
+        <Link href="/" title="הדשבורד שלי" className="rail-button">
+          <LayoutDashboard size={20} />
+        </Link>
         <button
           title="לוח משמרות"
           className={`rail-button ${activeSection === "schedule" ? "active" : ""}`}
@@ -579,6 +622,9 @@ export function ScheduleDashboard({
         >
           <Repeat2 size={20} />
         </button>
+        <Link href="/files" title="קבצים" className="rail-button">
+          <FileText size={20} />
+        </Link>
       </aside>
 
       <div className="workspace">
@@ -615,6 +661,8 @@ export function ScheduleDashboard({
         </header>
 
         <main className="scheduler-page">
+          <CurrentShiftBanner />
+
           <section className="schedule-toolbar" id="schedule-section">
             <div>
               <p className="eyebrow">Wecomconnect</p>
@@ -630,6 +678,17 @@ export function ScheduleDashboard({
               <button className="soft-button" onClick={() => setWeekStart(addDays(weekStart, 7))}>
                 <ChevronLeft size={18} />
               </button>
+              {currentUser.role === "MANAGER" ? (
+                <button
+                  className="export-button"
+                  onClick={generateSchedule}
+                  disabled={isGeneratingSchedule}
+                  title="שיבוץ אוטומטי של המשמרות הפנויות בשבוע זה"
+                >
+                  <Wand2 size={17} />
+                  {isGeneratingSchedule ? "יוצר סידור..." : "יצירת סידור אוטומטי"}
+                </button>
+              ) : null}
               <button className="export-button" onClick={exportSchedule}>
                 <Download size={17} />
                 ייצוא טבלה

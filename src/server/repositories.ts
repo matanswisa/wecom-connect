@@ -3,7 +3,9 @@ import type {
   AvailabilityBlock,
   AvailabilityStatus,
   Employee,
+  FileQuestion,
   Role,
+  SharedFile,
   ShiftAssignment,
   ShiftSwapRequest,
   ShiftType,
@@ -372,6 +374,40 @@ export async function deleteAssignment(id: string) {
   await query("DELETE FROM shift_assignments WHERE id = $1", [id]);
 }
 
+export async function bulkCreateAssignments(
+  weekStart: string,
+  inputs: { employeeId: string; dayIndex: number; shiftType: ShiftType }[]
+) {
+  if (inputs.length === 0) {
+    return [];
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const created: AssignmentRow[] = [];
+    for (const input of inputs) {
+      const result = await client.query<AssignmentRow>(
+        `INSERT INTO shift_assignments (employee_id, week_start, day_index, shift_type, notes)
+         VALUES ($1, $2, $3, $4, '')
+         ON CONFLICT (week_start, day_index, shift_type) DO NOTHING
+         RETURNING *`,
+        [input.employeeId, weekStart, input.dayIndex, input.shiftType]
+      );
+      if (result.rows[0]) {
+        created.push(result.rows[0]);
+      }
+    }
+    await client.query("COMMIT");
+    return created.map(toAssignment);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createAvailabilityBlock(input: {
   employeeId: string;
   weekStart: string;
@@ -415,36 +451,37 @@ export async function deleteAvailabilityBlock(id: string) {
   await query("DELETE FROM availability_blocks WHERE id = $1", [id]);
 }
 
+const SWAP_JOIN_SQL = `
+  SELECT swaps.*,
+         COALESCE(swaps.requester_employee_id_snapshot, requester_assignment.employee_id)
+           AS requester_employee_id,
+         COALESCE(swaps.requester_employee_name_snapshot, requester.name)
+           AS requester_employee_name,
+         COALESCE(swaps.target_employee_name_snapshot, target.name)
+           AS target_employee_name,
+         COALESCE(swaps.week_start_snapshot, requester_assignment.week_start) AS week_start,
+         COALESCE(swaps.day_index_snapshot, requester_assignment.day_index) AS day_index,
+         COALESCE(swaps.shift_type_snapshot, requester_assignment.shift_type) AS shift_type,
+         COALESCE(swaps.target_day_index_snapshot, target_assignment.day_index)
+           AS target_day_index,
+         COALESCE(swaps.target_shift_type_snapshot, target_assignment.shift_type)
+           AS target_shift_type
+  FROM shift_swap_requests swaps
+  LEFT JOIN shift_assignments requester_assignment
+    ON requester_assignment.id = swaps.requester_assignment_id
+  LEFT JOIN employees requester ON requester.id = requester_assignment.employee_id
+  LEFT JOIN employees target ON target.id = swaps.target_employee_id
+  LEFT JOIN shift_assignments target_assignment
+    ON target_assignment.id = swaps.target_assignment_id
+`;
+
 export async function listSwapRequests() {
-  const rows = await query<SwapRow>(
-    `SELECT swaps.*,
-            COALESCE(swaps.requester_employee_id_snapshot, requester_assignment.employee_id)
-              AS requester_employee_id,
-            COALESCE(swaps.requester_employee_name_snapshot, requester.name)
-              AS requester_employee_name,
-            COALESCE(swaps.target_employee_name_snapshot, target.name)
-              AS target_employee_name,
-            COALESCE(swaps.week_start_snapshot, requester_assignment.week_start) AS week_start,
-            COALESCE(swaps.day_index_snapshot, requester_assignment.day_index) AS day_index,
-            COALESCE(swaps.shift_type_snapshot, requester_assignment.shift_type) AS shift_type,
-            COALESCE(swaps.target_day_index_snapshot, target_assignment.day_index)
-              AS target_day_index,
-            COALESCE(swaps.target_shift_type_snapshot, target_assignment.shift_type)
-              AS target_shift_type
-     FROM shift_swap_requests swaps
-     LEFT JOIN shift_assignments requester_assignment
-       ON requester_assignment.id = swaps.requester_assignment_id
-     LEFT JOIN employees requester ON requester.id = requester_assignment.employee_id
-     LEFT JOIN employees target ON target.id = swaps.target_employee_id
-     LEFT JOIN shift_assignments target_assignment
-       ON target_assignment.id = swaps.target_assignment_id
-     ORDER BY swaps.created_at DESC`
-  );
+  const rows = await query<SwapRow>(`${SWAP_JOIN_SQL} ORDER BY swaps.created_at DESC`);
   return rows.map(toSwap);
 }
 
 export async function findSwapRequest(id: string) {
-  const [row] = await query<SwapRow>("SELECT * FROM shift_swap_requests WHERE id = $1", [id]);
+  const [row] = await query<SwapRow>(`${SWAP_JOIN_SQL} WHERE swaps.id = $1`, [id]);
   return row ? toSwap(row) : null;
 }
 
@@ -454,7 +491,7 @@ export async function createSwapRequest(input: {
   targetAssignmentId: string | null;
 }) {
   try {
-    const [swap] = await query<SwapRow>(
+    const [swap] = await query<{ id: string }>(
       `INSERT INTO shift_swap_requests
         (requester_assignment_id, target_employee_id, target_assignment_id,
          requester_employee_id_snapshot, requester_employee_name_snapshot,
@@ -470,10 +507,10 @@ export async function createSwapRequest(input: {
        JOIN employees target ON target.id = $2
        LEFT JOIN shift_assignments target_assignment ON target_assignment.id = $3
        WHERE requester_assignment.id = $1
-       RETURNING *`,
+       RETURNING id`,
       [input.requesterAssignmentId, input.targetEmployeeId, input.targetAssignmentId]
     );
-    return swap ? toSwap(swap) : null;
+    return swap ? findSwapRequest(swap.id) : null;
   } catch (error) {
     if ((error as { code?: string }).code === "23505") {
       return null;
@@ -682,6 +719,169 @@ function toSwap(row: SwapRow): ShiftSwapRequest {
     status: row.status,
     employeeDecidedAt: row.employee_decided_at,
     managerDecidedAt: row.manager_decided_at,
+    createdAt: row.created_at
+  };
+}
+
+export async function countEmployeeShiftsBetween(
+  employeeId: string,
+  fromDateOnly: string,
+  toDateOnly: string
+): Promise<number> {
+  const [row] = await query<{ shift_count: number }>(
+    `SELECT count(*)::int AS shift_count
+     FROM shift_assignments
+     WHERE employee_id = $1
+       AND (week_start::date + day_index) >= $2::date
+       AND (week_start::date + day_index) < $3::date`,
+    [employeeId, fromDateOnly, toDateOnly]
+  );
+  return row?.shift_count ?? 0;
+}
+
+export async function listUpcomingAssignments(
+  employeeId: string,
+  fromDateOnly: string,
+  limit: number
+) {
+  const rows = await query<AssignmentRow>(
+    `SELECT * FROM shift_assignments
+     WHERE employee_id = $1
+       AND (week_start::date + day_index) >= $2::date
+     ORDER BY (week_start::date + day_index) ASC,
+       CASE shift_type WHEN 'MORNING' THEN 0 WHEN 'EVENING' THEN 1 WHEN 'NIGHT' THEN 2 END ASC
+     LIMIT $3`,
+    [employeeId, fromDateOnly, limit]
+  );
+  return rows.map(toAssignment);
+}
+
+interface SharedFileRow {
+  id: string;
+  uploaded_by_user_id: string | null;
+  uploaded_by_name: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  extracted_text: string;
+  created_at: string;
+}
+
+const SHARED_FILE_META_COLUMNS =
+  "id, uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, extracted_text, created_at";
+
+export async function createSharedFile(input: {
+  uploadedByUserId: string;
+  uploadedByName: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  extractedText: string;
+  data: Buffer;
+}) {
+  const [row] = await query<SharedFileRow>(
+    `INSERT INTO shared_files
+      (uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, extracted_text, data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${SHARED_FILE_META_COLUMNS}`,
+    [
+      input.uploadedByUserId,
+      input.uploadedByName,
+      input.filename,
+      input.contentType,
+      input.sizeBytes,
+      input.extractedText,
+      input.data
+    ]
+  );
+  return toSharedFile(row);
+}
+
+export async function listSharedFiles() {
+  const rows = await query<SharedFileRow>(
+    `SELECT ${SHARED_FILE_META_COLUMNS} FROM shared_files ORDER BY created_at DESC`
+  );
+  return rows.map(toSharedFile);
+}
+
+export async function findSharedFileMeta(id: string) {
+  const [row] = await query<SharedFileRow>(
+    `SELECT ${SHARED_FILE_META_COLUMNS} FROM shared_files WHERE id = $1`,
+    [id]
+  );
+  return row ? toSharedFile(row) : null;
+}
+
+export async function findSharedFileWithData(id: string) {
+  const [row] = await query<SharedFileRow & { data: Buffer }>(
+    "SELECT * FROM shared_files WHERE id = $1",
+    [id]
+  );
+  if (!row) {
+    return null;
+  }
+  return { meta: toSharedFile(row), data: row.data, extractedText: row.extracted_text };
+}
+
+export async function deleteSharedFile(id: string) {
+  await query("DELETE FROM shared_files WHERE id = $1", [id]);
+}
+
+function toSharedFile(row: SharedFileRow): SharedFile {
+  return {
+    id: row.id,
+    uploadedByUserId: row.uploaded_by_user_id,
+    uploadedByName: row.uploaded_by_name,
+    filename: row.filename,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    hasExtractedText: row.extracted_text.trim().length > 0,
+    createdAt: row.created_at
+  };
+}
+
+interface FileQuestionRow {
+  id: string;
+  file_id: string;
+  asked_by_user_id: string | null;
+  asked_by_name: string;
+  question: string;
+  answer: string;
+  created_at: string;
+}
+
+export async function createFileQuestion(input: {
+  fileId: string;
+  askedByUserId: string;
+  askedByName: string;
+  question: string;
+  answer: string;
+}) {
+  const [row] = await query<FileQuestionRow>(
+    `INSERT INTO file_questions (file_id, asked_by_user_id, asked_by_name, question, answer)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [input.fileId, input.askedByUserId, input.askedByName, input.question, input.answer]
+  );
+  return toFileQuestion(row);
+}
+
+export async function listFileQuestions(fileId: string) {
+  const rows = await query<FileQuestionRow>(
+    "SELECT * FROM file_questions WHERE file_id = $1 ORDER BY created_at ASC",
+    [fileId]
+  );
+  return rows.map(toFileQuestion);
+}
+
+function toFileQuestion(row: FileQuestionRow): FileQuestion {
+  return {
+    id: row.id,
+    fileId: row.file_id,
+    askedByUserId: row.asked_by_user_id,
+    askedByName: row.asked_by_name,
+    question: row.question,
+    answer: row.answer,
     createdAt: row.created_at
   };
 }

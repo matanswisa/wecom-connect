@@ -1,3 +1,4 @@
+import { addDays, diffDays, getScheduleTimeParts, getSundayWeekStart, zonedTimeToUtc } from "./dates";
 import type {
   AssignmentInput,
   AssignmentIssue,
@@ -47,11 +48,36 @@ export const SHIFT_DEFINITIONS: Record<
 };
 
 const SHIFT_ORDER: ShiftType[] = ["MORNING", "EVENING", "NIGHT"];
-const MAX_WEEKLY_SHIFTS = 6;
+export const MAX_WEEKLY_SHIFTS = 6;
 const MIN_REST_HOURS = 8;
 
 export function getShiftTypes(): ShiftType[] {
   return SHIFT_ORDER;
+}
+
+// Unlike getShiftWindow (which treats "07:00" as literal UTC and is only ever used for
+// relative rest-gap math between two such windows), this returns the shift's true
+// real-world start instant in Israel time, for comparisons against an actual "now".
+export function getShiftStartInstant(weekStart: string, dayIndex: number, shiftType: ShiftType): Date {
+  const absoluteDate = addDays(weekStart, dayIndex);
+  const [hour, minute] = SHIFT_DEFINITIONS[shiftType].startsAt.split(":").map(Number);
+  return zonedTimeToUtc(absoluteDate, hour, minute);
+}
+
+export function getCurrentShiftSlot(date = new Date()): {
+  weekStart: string;
+  dayIndex: number;
+  shiftType: ShiftType;
+} {
+  const { dateOnly, hour } = getScheduleTimeParts(date);
+  // A night shift that started at 23:00 the previous day is still that day's night
+  // shift until 07:00, even though the calendar date has already rolled over.
+  const shiftDateOnly = hour < 7 ? addDays(dateOnly, -1) : dateOnly;
+  const shiftType: ShiftType = hour < 7 || hour >= 23 ? "NIGHT" : hour < 15 ? "MORNING" : "EVENING";
+  const weekStart = getSundayWeekStart(new Date(`${shiftDateOnly}T12:00:00.000Z`));
+  const dayIndex = diffDays(weekStart, shiftDateOnly);
+
+  return { weekStart, dayIndex, shiftType };
 }
 
 export function getShiftWindow(weekStart: string, dayIndex: number, shiftType: ShiftType) {
