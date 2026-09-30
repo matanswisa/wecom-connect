@@ -164,3 +164,92 @@ CREATE TABLE IF NOT EXISTS file_questions (
 );
 
 CREATE INDEX IF NOT EXISTS file_questions_file_id_idx ON file_questions (file_id);
+
+-- Each employee sets their own hourly wage for the salary estimate. Kept out of the
+-- employees table so it is never exposed through the manager-facing employee APIs.
+CREATE TABLE IF NOT EXISTS employee_pay_settings (
+  employee_id UUID PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  hourly_wage NUMERIC(10, 2) NOT NULL CHECK (hourly_wage > 0),
+  tax_credit_points NUMERIC(5, 2) NOT NULL DEFAULT 2.25 CHECK (tax_credit_points >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- In-app notifications (the bell) and the Web Push subscriptions used to deliver them
+-- to installed phone apps.
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  link TEXT,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx
+  ON notifications (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Shift giveaway board: an employee offers one of their shifts, another employee takes
+-- it, and a manager approves the handover.
+CREATE TABLE IF NOT EXISTS shift_giveaways (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id UUID NOT NULL REFERENCES shift_assignments(id) ON DELETE CASCADE,
+  offered_by_employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  taken_by_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (
+    status IN ('OPEN', 'PENDING_MANAGER', 'APPROVED', 'DECLINED_BY_MANAGER', 'CANCELLED')
+  ),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  taken_at TIMESTAMPTZ,
+  decided_at TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS shift_giveaways_one_active_per_assignment
+  ON shift_giveaways (assignment_id)
+  WHERE status IN ('OPEN', 'PENDING_MANAGER');
+
+-- Vacation requests: approved requests become full-day vacation (TIME_OFF) availability
+-- and remove the employee's shifts on those days.
+CREATE TABLE IF NOT EXISTS vacation_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (
+    status IN ('PENDING', 'APPROVED', 'DECLINED', 'CANCELLED')
+  ),
+  removed_shift_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_at TIMESTAMPTZ,
+  CHECK (end_date >= start_date)
+);
+
+CREATE INDEX IF NOT EXISTS vacation_requests_employee_idx
+  ON vacation_requests (employee_id, start_date);
+
+-- Records that an employee finished filling in their availability for a week (either by
+-- confirming it or by changing any of it), so the weekly reminder skips them.
+CREATE TABLE IF NOT EXISTS availability_submissions (
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  week_start DATE NOT NULL,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (employee_id, week_start)
+);
+
+-- Weeks a manager published: every employee was notified that the week's schedule is
+-- ready. Publishing again updates the time and sends an "updated schedule" notification.
+CREATE TABLE IF NOT EXISTS published_weeks (
+  week_start DATE PRIMARY KEY,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_by UUID REFERENCES users(id) ON DELETE SET NULL
+);

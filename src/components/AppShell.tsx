@@ -3,8 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, FileText, LayoutDashboard, LogOut, UserRound } from "lucide-react";
+import { CalendarDays, FileText, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
+import { InstallAppBanner, InstallAppButton } from "./InstallApp";
+import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import type { User } from "@/lib/types";
 
@@ -14,7 +16,7 @@ export function AppShell({
   children
 }: {
   currentUser: User;
-  active: "home" | "schedule" | "files";
+  active: "home" | "schedule" | "files" | "requests";
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -41,6 +43,9 @@ export function AppShell({
         >
           <CalendarDays size={20} />
         </Link>
+        <Link href="/requests" title="בקשות" className={`rail-button ${active === "requests" ? "active" : ""}`}>
+          <Inbox size={20} />
+        </Link>
         <Link href="/files" title="קבצים" className={`rail-button ${active === "files" ? "active" : ""}`}>
           <FileText size={20} />
         </Link>
@@ -53,6 +58,8 @@ export function AppShell({
             <span>connect</span>
           </div>
           <div className="topbar-actions">
+            <InstallAppButton />
+            <NotificationBell />
             <span className="user-pill">
               <UserRound size={18} />
               {currentUser.name}
@@ -63,7 +70,10 @@ export function AppShell({
             </button>
           </div>
         </header>
-        <main className="scheduler-page">{children}</main>
+        <main className="scheduler-page">
+          <InstallAppBanner />
+          {children}
+        </main>
       </div>
     </div>
   );

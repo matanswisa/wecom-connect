@@ -3,7 +3,6 @@ import type {
   AvailabilityBlock,
   AvailabilityStatus,
   Employee,
-  FileQuestion,
   Role,
   SharedFile,
   ShiftAssignment,
@@ -258,6 +257,18 @@ export async function deleteManagedEmployee(id: string) {
 export async function listAssignments(weekStart: string) {
   const rows = await query<AssignmentRow>(
     "SELECT * FROM shift_assignments WHERE week_start = $1 ORDER BY day_index, shift_type",
+    [weekStart]
+  );
+  return rows.map(toAssignment);
+}
+
+// The week plus the weeks before and after it, so rest gaps that cross a week boundary
+// (e.g. Saturday night -> Sunday morning) can be checked.
+export async function listAssignmentsAroundWeek(weekStart: string) {
+  const rows = await query<AssignmentRow>(
+    `SELECT * FROM shift_assignments
+     WHERE week_start BETWEEN $1::date - 7 AND $1::date + 7
+     ORDER BY week_start, day_index, shift_type`,
     [weekStart]
   );
   return rows.map(toAssignment);
@@ -763,12 +774,11 @@ interface SharedFileRow {
   filename: string;
   content_type: string;
   size_bytes: number;
-  extracted_text: string;
   created_at: string;
 }
 
 const SHARED_FILE_META_COLUMNS =
-  "id, uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, extracted_text, created_at";
+  "id, uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, created_at";
 
 export async function createSharedFile(input: {
   uploadedByUserId: string;
@@ -776,13 +786,12 @@ export async function createSharedFile(input: {
   filename: string;
   contentType: string;
   sizeBytes: number;
-  extractedText: string;
   data: Buffer;
 }) {
   const [row] = await query<SharedFileRow>(
     `INSERT INTO shared_files
-      (uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, extracted_text, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+      (uploaded_by_user_id, uploaded_by_name, filename, content_type, size_bytes, data)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING ${SHARED_FILE_META_COLUMNS}`,
     [
       input.uploadedByUserId,
@@ -790,7 +799,6 @@ export async function createSharedFile(input: {
       input.filename,
       input.contentType,
       input.sizeBytes,
-      input.extractedText,
       input.data
     ]
   );
@@ -820,7 +828,7 @@ export async function findSharedFileWithData(id: string) {
   if (!row) {
     return null;
   }
-  return { meta: toSharedFile(row), data: row.data, extractedText: row.extracted_text };
+  return { meta: toSharedFile(row), data: row.data };
 }
 
 export async function deleteSharedFile(id: string) {
@@ -835,53 +843,6 @@ function toSharedFile(row: SharedFileRow): SharedFile {
     filename: row.filename,
     contentType: row.content_type,
     sizeBytes: row.size_bytes,
-    hasExtractedText: row.extracted_text.trim().length > 0,
-    createdAt: row.created_at
-  };
-}
-
-interface FileQuestionRow {
-  id: string;
-  file_id: string;
-  asked_by_user_id: string | null;
-  asked_by_name: string;
-  question: string;
-  answer: string;
-  created_at: string;
-}
-
-export async function createFileQuestion(input: {
-  fileId: string;
-  askedByUserId: string;
-  askedByName: string;
-  question: string;
-  answer: string;
-}) {
-  const [row] = await query<FileQuestionRow>(
-    `INSERT INTO file_questions (file_id, asked_by_user_id, asked_by_name, question, answer)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [input.fileId, input.askedByUserId, input.askedByName, input.question, input.answer]
-  );
-  return toFileQuestion(row);
-}
-
-export async function listFileQuestions(fileId: string) {
-  const rows = await query<FileQuestionRow>(
-    "SELECT * FROM file_questions WHERE file_id = $1 ORDER BY created_at ASC",
-    [fileId]
-  );
-  return rows.map(toFileQuestion);
-}
-
-function toFileQuestion(row: FileQuestionRow): FileQuestion {
-  return {
-    id: row.id,
-    fileId: row.file_id,
-    askedByUserId: row.asked_by_user_id,
-    askedByName: row.asked_by_name,
-    question: row.question,
-    answer: row.answer,
     createdAt: row.created_at
   };
 }
